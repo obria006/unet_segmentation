@@ -31,13 +31,13 @@ class StandardLogger(logging.Logger):
         s_formatter = logging.Formatter('%(levelname)s: %(message)s')
         s_handler.setFormatter(s_formatter)
         self.addHandler(s_handler)
-        now = datetime.now().strftime("%Y%m%d")
-        if not os.path.isdir("logs"):
-            os.makedirs("logs")
-            print("Created logging directory")
-        log_path = f"logs/{now}.log"
-        f_handler = logging.FileHandler(log_path)
-        f_handler.setLevel(logging.WARNING)
-        f_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s: %(message)s')
-        f_handler.setFormatter(f_formatter)
-        self.addHandler(f_handler)
+        # now = datetime.now().strftime("%Y%m%d")
+        # if not os.path.isdir("logs"):
+        #     os.makedirs("logs")
+        #     print("Created logging directory")
+        # log_path = f"logs/{now}.log"
+        # f_handler = logging.FileHandler(log_path)
+        # f_handler.setLevel(logging.WARNING)
+        # f_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s: %(message)s')
+        # f_handler.setFormatter(f_formatter)
+        # self.addHandler(f_handler)

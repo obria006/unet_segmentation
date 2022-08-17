@@ -24,5 +24,6 @@ setup(
           "torch",
           "torchvision",
           "czifile",
+          "opencv-python"
         ]
 )

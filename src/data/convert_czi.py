@@ -30,19 +30,21 @@ def czi_to_ext(basename:str, input_dir:str, output_dir:str, overwrite:bool=False
     if shape_dim != 5:
         return None
     (n, _, width, height, channels) = img_czi.shape
-    logger.info(f"Converting image: {czi_path}")
     # Save each stack in czi to directory dictated by ouptut_dir and the czi basename
+    modified_output_dir = f"{output_dir}/{in_name}"
+    if not os.path.isdir(modified_output_dir):
+        os.makedirs(modified_output_dir)
+        logger.info(f"Created directory: {modified_output_dir}")
+    elif os.path.isdir(modified_output_dir) and overwrite is False:
+        logger.info(f"Overwrite disabled, so not saving to {modified_output_dir} because it already exists")
+        return None
+    # Save each image of czi stack
+    logger.info(f"Converting image: {czi_path}")
     for k in range(n):
         np_img = img_czi[k, 0, :, :, 0]
         out_basename = f"{in_name}_{str(k).zfill(6)}{ext}"
         modified_output_dir = f"{output_dir}/{in_name}"
         out_path = f"{modified_output_dir}/{out_basename}"
-        if not os.path.isdir(modified_output_dir):
-            os.makedirs(modified_output_dir)
-            logger.info(f"Created directory: {modified_output_dir}")
-        if os.path.exists(out_path) and overwrite is False:
-            logger.info(f"Overwrite disabled, so not saving {out_path} beacause it already exists")
-            break
         imageio.imwrite(out_path, np_img)
         
 
@@ -52,11 +54,13 @@ def czi_convert_directories(input_dir:str, output_dir:str, overwrite:bool=False,
     desired extension. Mirrors directory structure in output directory
 
     Arguments:
-        input_dir: location of the czi file
+        input_dir: root directroy to start searching for czi files
         output_dir: desired location of converted image
         overwrite: whether to overwrite the converted image if it already exists
         ext: Desired extension of converted files. 
     '''
+    # Validate desired converted extension
+    assert ext in [".tif", ".jpg", ".jpeg", ".tiff", ".png", ".bmp"]
     for root, dirs, files in os.walk(input_dir):
         # Check if file is czi
         for fname in files:
