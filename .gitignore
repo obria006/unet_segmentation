@@ -77,6 +77,8 @@ target/
 
 # exclude data from source control by default
 /data/
+/src/models/*/data/
+/src/models/*/results/
 
 # Mac OS-specific storage files
 .DS_Store
