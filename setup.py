@@ -24,6 +24,7 @@ setup(
           "torch",
           "torchvision",
           "czifile",
-          "opencv-python"
+          "opencv-python",
+          "scikit-learn",
         ]
 )
