@@ -172,16 +172,16 @@ class Trainer():
                 loss = self.criterion(output, semantic_masks.float())  # B 1 Z Y X JO only for  BCEWithLogitsLoss
                 loss = loss.mean()
                 loss_meter.update(loss.item())
-                # for b in range(output.shape[0]):
-                #     output_softmax = F.softmax(output[b], dim=0)
-                #     prediction_fg = output_softmax[0, ...].cpu().detach().numpy()
+                for b in range(output.shape[0]):
+                    output_softmax = F.softmax(output[b], dim=0)
+                    prediction_fg = output_softmax[0, ...].cpu().detach().numpy()
                 #     # prediction_fg = output_softmax[1, ...].cpu().detach().numpy()
-                #     pred_fg_thresholded = prediction_fg > 0.5
-                #     sc = matching_dataset(y_pred=[pred_fg_thresholded], y_true=[semantic_masks[b, 0, ...].cpu().detach().numpy()])
-                #     # instance_map, _ = ndimage.label(pred_fg_thresholded)
+                    pred_fg_thresholded = (prediction_fg > 0.5).astype(int)
+                    sc = matching_dataset(y_pred=[pred_fg_thresholded], y_true=[semantic_masks[b, 0, ...].cpu().detach().numpy()])
+                    # instance_map, _ = ndimage.label(pred_fg_thresholded)
                 #     # sc = matching_dataset(y_pred=[instance_map], y_true=[instance[b, 0, ...].cpu().detach().numpy()],
                 #     #                     thresh=0.5, show_progress=False)
-                #     average_precision_meter.update(sc.accuracy)
+                    average_precision_meter.update(sc.f1)
 
         return loss_meter.avg, average_precision_meter.avg
 
