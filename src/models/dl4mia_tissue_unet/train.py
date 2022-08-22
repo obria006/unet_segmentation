@@ -173,7 +173,8 @@ class Trainer():
                 loss = loss.mean()
                 loss_meter.update(loss.item())
                 for b in range(output.shape[0]):
-                    output_softmax = F.softmax(output[b], dim=0)
+                    # output_softmax = F.softmax(output[b], dim=0)
+                    output_softmax = F.sigmoid(output[b], dim=0)
                     prediction_fg = output_softmax[0, ...].cpu().detach().numpy()
                 #     # prediction_fg = output_softmax[1, ...].cpu().detach().numpy()
                     pred_fg_thresholded = (prediction_fg > 0.5).astype(int)
