@@ -34,6 +34,11 @@ def save_checkpoint(state, is_best, save_dir, name='checkpoint.pth'):
         shutil.copyfile(file_name, os.path.join(
             save_dir, 'best_iou_model.pth'))
 
+def save_model(model, save_dir, name='unet_tissue.pth'):
+    print('=> saving model', flush=True)
+    file_name = os.path.join(save_dir, name)
+    torch.save(model, file_name)
+
 class Trainer():
 
     def __init__(self,train_dataset_dict, val_dataset_dict, model_dict, configs, color_map='magma'):
@@ -130,6 +135,7 @@ class Trainer():
                     'logger_data': logger.data,
                 }
             save_checkpoint(state, is_best, save_dir=self.configs['save_dir'])
+        save_model(self.model, save_dir=self.configs['save_dir'])
 
     def train(self):
         loss_meter = AverageMeter()
