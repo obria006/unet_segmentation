@@ -1,5 +1,6 @@
 import os
 import torch
+from datetime import datetime
                
 # base path of the dataset)
 DATASET_PATH = os.path.join("data","processed","uncropped")
@@ -16,11 +17,13 @@ NUM_LEVELS = 3
 # initialize learning rate, number of epochs to train for, and the
 # batch size
 INIT_LR = 5e-4
-NUM_EPOCHS = 6 # was 40
-BATCH_SIZE = 8 # was 64
+NUM_EPOCHS = 15 # was 40
+BATCH_SIZE = 16 # was 64
 
 # define the path to the base output directory
-BASE_OUTPUT = os.path.join("src","models","dl4mia_tissue_unet","results")
+now = datetime.now()
+date_str = now.strftime("%Y%m%d_%H%M%S")
+BASE_OUTPUT = os.path.join("src","models","dl4mia_tissue_unet","results",date_str)
 if not os.path.isdir(BASE_OUTPUT):
     os.makedirs(BASE_OUTPUT)
 
