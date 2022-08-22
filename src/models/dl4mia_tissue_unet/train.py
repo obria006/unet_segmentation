@@ -179,7 +179,7 @@ class Trainer():
 
         return loss_meter.avg, average_precision_meter.avg
 
-if __name__ == '__main__':
+def main():
     train_dataset_dict = cfg.TRAIN_DATASET_DICT
     print('Training dictionary:')
     print_dict(train_dataset_dict)
@@ -195,6 +195,8 @@ if __name__ == '__main__':
     model_trainer = Trainer(train_dataset_dict, val_dataset_dict, model_dict, configs)
     model_trainer.begin_training()
 
+if __name__ == '__main__':
+    main()
 
 # import os
 # import shutil
