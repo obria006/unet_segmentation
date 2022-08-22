@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 from src.models.dl4mia_tissue_unet.my_utils import print_dict
-from src.models.dl4mia_tissue_unet import config as cfg
+from src.models.dl4mia_tissue_unet.config import Config
 from src.models.dl4mia_tissue_unet.dataset import TwoDimensionalDataset
 from src.models.dl4mia_tissue_unet.model import UNet
 from src.models.dl4mia_tissue_unet.utils import AverageMeter, Logger, Visualizer
@@ -179,7 +179,8 @@ class Trainer():
 
         return loss_meter.avg, average_precision_meter.avg
 
-def main():
+def main(n_channels:int=1, n_classes:int=1, n_levels:int=3, init_lr:float=5e-4, n_epochs:int=5, batch_size:int=16):
+    cfg = Config(n_channels=n_channels, n_classes=n_classes, n_levels=n_levels, init_lr=init_lr, n_epochs=n_epochs, batch_size=batch_size)
     train_dataset_dict = cfg.TRAIN_DATASET_DICT
     print('Training dictionary:')
     print_dict(train_dataset_dict)
