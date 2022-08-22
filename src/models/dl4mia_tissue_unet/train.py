@@ -11,6 +11,7 @@ from src.models.dl4mia_tissue_unet.dataset import TwoDimensionalDataset
 from src.models.dl4mia_tissue_unet.model import UNet
 from src.models.dl4mia_tissue_unet.utils import AverageMeter, Logger, Visualizer
 from src.models.dl4mia_tissue_unet.utils2 import matching_dataset
+from src.models.dl4mia_tissue_unet.metrics import binary_sem_seg_metrics
 from scipy import ndimage
 torch.backends.cudnn.benchmark = True
 
@@ -172,17 +173,19 @@ class Trainer():
                 loss = self.criterion(output, semantic_masks.float())  # B 1 Z Y X JO only for  BCEWithLogitsLoss
                 loss = loss.mean()
                 loss_meter.update(loss.item())
+                # bin_metric = BinaryMetrics(activation='0-1') # Does a sigmoid and threshold activation
+                # acc, dice, prec, spec, rec = bin_metric(semantic_masks[:, 0, ...], output)
+                # average_precision_meter.update(dice)
                 for b in range(output.shape[0]):
-                    # output_softmax = F.softmax(output[b], dim=0)
                     output_softmax = torch.sigmoid(output[b])
                     prediction_fg = output_softmax[0, ...].cpu().detach().numpy()
-                #     # prediction_fg = output_softmax[1, ...].cpu().detach().numpy()
                     pred_fg_thresholded = (prediction_fg > 0.5).astype(int)
-                    sc = matching_dataset(y_pred=[pred_fg_thresholded], y_true=[semantic_masks[b, 0, ...].cpu().detach().numpy()])
+                    acc, dice, prec, spec, rec = binary_sem_seg_metrics(y_true=semantic_masks[b, 0, ...].cpu().detach().numpy(), y_pred=pred_fg_thresholded)
+                    # sc = matching_dataset(y_pred=[pred_fg_thresholded], y_true=[semantic_masks[b, 0, ...].cpu().detach().numpy()])
                     # instance_map, _ = ndimage.label(pred_fg_thresholded)
                 #     # sc = matching_dataset(y_pred=[instance_map], y_true=[instance[b, 0, ...].cpu().detach().numpy()],
                 #     #                     thresh=0.5, show_progress=False)
-                    average_precision_meter.update(sc.f1)
+                    average_precision_meter.update(dice)
 
         return loss_meter.avg, average_precision_meter.avg
 
