@@ -5,7 +5,7 @@ from datetime import datetime
 
 class Config():
 
-    DATASET_PATH = os.path.join("data","processed","uncropped")
+    DATASET_PATH = os.path.join("data","processed","crop_uncrop_mix")
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     WORKERS = max([1, int(os.cpu_count()/2)])
 
