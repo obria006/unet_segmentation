@@ -29,7 +29,7 @@ class TwoDimensionalDataset(Dataset):
         image = tifffile.imread(self.image_list[index]) # Y X
         mask = tifffile.imread(self.instance_list[index])  # Y X
         sample['image'] = self.normalize(image[np.newaxis, ...], axis=(1, 2))  # added new axis already for channel
-        assert self.bg_id in np.unique(mask)
+        # assert self.bg_id in np.unique(mask)
         sample['semantic_mask'] = mask[np.newaxis, ...]
         # if self.transform is None:
         #     sample['semantic_mask'] = mask[np.newaxis, ...].astype(np.float32)
