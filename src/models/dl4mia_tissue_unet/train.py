@@ -69,8 +69,8 @@ class Trainer():
     def _create_model(self, model_dict, device):
         # set model
         model = UNet(**model_dict['kwargs'])
-        # model = torch.nn.DataParallel(model).to(device)
-        model.to(device)
+        model = torch.nn.DataParallel(model).to(device)
+        # model.to(device)
         return model
 
     def _create_criterion(self, device:torch.device, weight:list=[1.0, 1.0, 5.0]):
@@ -79,8 +79,8 @@ class Trainer():
         else:
             criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight))
         criterion = nn.BCEWithLogitsLoss()
-        # criterion = torch.nn.DataParallel(criterion).to(device)
-        criterion.to(device)
+        criterion = torch.nn.DataParallel(criterion).to(device)
+        # criterion.to(device)
         return criterion
 
     def _set_optimizer(self, weight_decay:float=1e-4):
@@ -138,14 +138,14 @@ class Trainer():
                     'best_ap': best_ap,
                     'train_cuda': self.configs['cuda'],
                     'model_dict': self.model_dict,
-                    'model_state_dict': self.model.state_dict(),
+                    'model_state_dict': self.model.module.state_dict(), # remove .module if not using nn.DataParallel model
                     'optim_state_dict': self.optimizer.state_dict(),
                     'logger_data': logger.data,
                 }
                 state = {
                     'train_cuda': self.configs['cuda'],
                     'model_dict': self.model_dict,
-                    'model_state_dict': self.model.state_dict(),
+                    'model_state_dict': self.model.module.state_dict(), # remove .module if not using nn.DataParallel model
                 }
                 save_checkpoint(trainable_state, is_best, save_dir=self.configs['save_dir'], name='trainable_last.pth')
                 save_checkpoint(state, False, save_dir=self.configs['save_dir'], name='last.pth')
