@@ -142,7 +142,7 @@ def make_predictions(predicter, imagePath, config):
     # prepare a plot for visualization
     prepare_plot(orig, gtMask, actMask, predMask,title=filename)
 
-def main():
+def main(ckpt_path = None):
     config = Config()
     # load the image paths in our testing file and randomly select 10
     # image paths
@@ -154,29 +154,30 @@ def main():
     # load our model from disk and flash it to the current device
     print("[INFO] load up model...")
 
-    model_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/model.pth"
-    ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/trainable_last.pth"
-    ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/best.pth"
-    ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/last.pth"
+    if ckpt_path is None:
+        model_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/model.pth"
+        ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/trainable_last.pth"
+        ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/best.pth"
+        ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/last.pth"
 
-    # model_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/model.pth"
-    # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/trainable_last.pth"
-    # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/best.pth"
-    # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/last.pth"
+        # model_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/model.pth"
+        # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/trainable_last.pth"
+        # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/best.pth"
+        # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/last.pth"
 
-    # model_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/model.pth"
-    # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/trainable_last.pth"
-    # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/best.pth"
-    # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/last.pth"
+        # model_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/model.pth"
+        # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/trainable_last.pth"
+        # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/best.pth"
+        # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/last.pth"
 
-    # model_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/model.pth"
-    # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/trainable_last.pth"
-    # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/best.pth"
-    # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/last.pth"
+        # model_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/model.pth"
+        # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/trainable_last.pth"
+        # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/best.pth"
+        # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/last.pth"
 
     t0 = time.time()
     # P = Predicter.from_model(model_path)
-    P = Predicter.from_ckpt(ckpt_path=ckpt_best_path)
+    P = Predicter.from_ckpt(ckpt_path=ckpt_path)
     print(f"Load time: {time.time() - t0}")
 
     # iterate over the randomly selected test image paths
