@@ -26,16 +26,16 @@ def calculate_IoU(pred, label):
         return iou
 
 
-def save_checkpoint(state, is_best, save_dir, name='checkpoint.pth'):
+def save_checkpoint(state, is_best, save_dir, name='last.pth'):
     print('=> saving checkpoint', flush=True)
     file_name = os.path.join(save_dir, name)
     torch.save(state, file_name)
 
     if is_best:
         shutil.copyfile(file_name, os.path.join(
-            save_dir, 'best_iou_model.pth'))
+            save_dir, 'best.pth'))
 
-def save_model(model, save_dir, name='unet_tissue.pth'):
+def save_model(model, save_dir, name='model.pth'):
     print('=> saving model', flush=True)
     file_name = os.path.join(save_dir, name)
     torch.save(model, file_name)
@@ -45,6 +45,7 @@ class Trainer():
     def __init__(self,train_dataset_dict, val_dataset_dict, model_dict, configs, color_map='magma'):
         self.configs = configs
         device = torch.device("cuda:0" if self.configs['cuda'] else "cpu")
+        self.model_dict = model_dict
         
         print('loading datasets...')
         self.train_dataset_it = self._create_data_loader(train_dataset_dict, shuffle=True, drop_last=True)
@@ -68,7 +69,8 @@ class Trainer():
     def _create_model(self, model_dict, device):
         # set model
         model = UNet(**model_dict['kwargs'])
-        model = torch.nn.DataParallel(model).to(device)
+        # model = torch.nn.DataParallel(model).to(device)
+        model.to(device)
         return model
 
     def _create_criterion(self, device:torch.device, weight:list=[1.0, 1.0, 5.0]):
@@ -77,7 +79,8 @@ class Trainer():
         else:
             criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight))
         criterion = nn.BCEWithLogitsLoss()
-        criterion = torch.nn.DataParallel(criterion).to(device)
+        # criterion = torch.nn.DataParallel(criterion).to(device)
+        criterion.to(device)
         return criterion
 
     def _set_optimizer(self, weight_decay:float=1e-4):
@@ -128,14 +131,24 @@ class Trainer():
             best_ap = max(val_ap, best_ap)
 
             if self.configs['save']:
-                state = {
+                trainable_state = {
                     'epoch': epoch,
+                    'val_loss': val_loss,
+                    'val_ap': val_ap,
                     'best_ap': best_ap,
+                    'train_cuda': self.configs['cuda'],
+                    'model_dict': self.model_dict,
                     'model_state_dict': self.model.state_dict(),
                     'optim_state_dict': self.optimizer.state_dict(),
                     'logger_data': logger.data,
                 }
-            save_checkpoint(state, is_best, save_dir=self.configs['save_dir'])
+                state = {
+                    'train_cuda': self.configs['cuda'],
+                    'model_dict': self.model_dict,
+                    'model_state_dict': self.model.state_dict(),
+                }
+                save_checkpoint(trainable_state, is_best, save_dir=self.configs['save_dir'], name='trainable_last.pth')
+                save_checkpoint(state, False, save_dir=self.configs['save_dir'], name='last.pth')
         save_model(self.model, save_dir=self.configs['save_dir'])
 
     def train(self):
