@@ -1,5 +1,6 @@
 import os
 import torch
+from src.models.dl4mia_tissue_unet import transforms as T
 from datetime import datetime
 
 class Config():
@@ -28,7 +29,15 @@ class Config():
 
         # DL4MIA specific settings. Number of workers for the dataloader,
         # the data tranformations, and the type of unet
-        self.TRANSFORMS = None
+        self.TRANSFORMS = T.Compose([
+            T.NumpyToTensor(img_dtype=torch.float, mask_dtype=torch.short),
+            T.RandomJitter(brightness=0.3, contrast=0.3, p=0.3),
+            T.RandomFiveCrop(p=0.5), #FIXME remove when use crop/uncrop mix dataset
+            T.RandomRotationTransform(angles=[90]),
+            T.RandomFlip(),
+            T.ResizeTransform(size=(128, 128)), #FIXME replace with config parameter
+        ])
+        # self.TRANSFORMS = None
         self.UNET_TYPE = '2d'
 
         # the training dataset dictionary for the DataLoader

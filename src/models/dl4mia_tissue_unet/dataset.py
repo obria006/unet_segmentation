@@ -28,7 +28,6 @@ class TwoDimensionalDataset(Dataset):
         sample = {}
         image = tifffile.imread(self.image_list[index]) # Y X
         mask = tifffile.imread(self.instance_list[index])  # Y X
-
         sample['image'] = self.normalize(image[np.newaxis, ...], axis=(1, 2))  # added new axis already for channel
         assert self.bg_id in np.unique(mask)
         sample['semantic_mask'] = mask[np.newaxis, ...]
@@ -38,9 +37,11 @@ class TwoDimensionalDataset(Dataset):
         #     sample['semantic_mask'] = mask[np.newaxis, ...]
         sample['im_name'] = self.image_list[index]
         if (self.transform is not None):
-            return self.transform(sample)
-        else:
-            return sample
+            img_T, mask_T = self.transform(sample['image'], sample['semantic_mask'])
+            sample['image'] = img_T
+            sample['semantic_mask'] = mask_T
+
+        return sample
 
     def __len__(self):
         return self.real_size if self.size is None else self.size
