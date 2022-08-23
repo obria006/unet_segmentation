@@ -34,7 +34,7 @@ class Predicter():
             if 'state_dict' not in key and 'logger_data' not in key:
                 print(f"\t{key} = {checkpoint[key]}")
         model = UNet(**model_dict['kwargs'])
-        model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict, strict=True)
         model.to(cls.device)
         return cls(model)
 
