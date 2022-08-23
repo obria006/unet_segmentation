@@ -32,7 +32,7 @@ class Config():
         self.TRANSFORMS = T.Compose([
             T.NumpyToTensor(img_dtype=torch.float, mask_dtype=torch.short),
             T.RandomJitter(brightness=0.3, contrast=0.3, p=0.3),
-            T.RandomFiveCrop(p=0.5), #FIXME remove when use crop/uncrop mix dataset
+            # T.RandomFiveCrop(p=0.5), #FIXME remove when use crop/uncrop mix dataset
             T.RandomRotationTransform(angles=[90]),
             T.RandomFlip(),
             T.ResizeTransform(size=(128, 128)), #FIXME replace with config parameter
