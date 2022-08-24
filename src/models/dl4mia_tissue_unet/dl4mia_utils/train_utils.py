@@ -1,16 +1,35 @@
-import collections
+""" Fuctions/classes to be used during training process """
 import os
+import shutil
+import torch
+import collections
 import threading
-
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from PIL import Image
-import math
 import torch
-from torch.autograd import Variable
 
+def save_checkpoint(state:dict, is_best:bool, save_dir:str, name:str='last.pth'):
+    """
+    Saves training checkpoint to disk
+
+    Args:
+        state: Model's state in dictionary
+        is_best: Whether the model is the best (will save a best.pth file)
+        save_dir: directory to save the checkpoint to
+        name: Name of the checkpoint to be saved
+    """
+    # save the checkpoint to the file
+    print('=> saving checkpoint', flush=True)
+    file_name = os.path.join(save_dir, name)
+    torch.save(state, file_name)
+
+    # make a copy as `best.pth` if is the best checkpoint
+    if is_best:
+        shutil.copyfile(file_name, os.path.join(
+            save_dir, 'best.pth'))
 
 class AverageMeter(object):
 

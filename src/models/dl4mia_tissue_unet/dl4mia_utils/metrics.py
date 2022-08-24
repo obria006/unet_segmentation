@@ -200,7 +200,7 @@ def binary_sem_seg_metrics(y_true:np.ndarray, y_pred:np.ndarray, eps=1e-5):
     
     Returns:
         accuracy, dice, precision, specificity and recall of prediction
-"""
+    """
     assert y_true.shape == y_pred.shape, "Images for metrics must be same shape"
     assert len(np.unique(y_true)) <= 2, f"Ground truth image for binary metric must be binary. Invalid values: {np.unique(y_true)}"
     assert len(np.unique(y_pred)) <= 2, f"Prediction image for binary metric must be binary. Invalid values: {np.unique(y_pred)}"

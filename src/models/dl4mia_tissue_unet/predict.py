@@ -1,18 +1,17 @@
-# USAGEconfig 
-# python predict.py
-
 # import the necessary packages
-from src.models.dl4mia_tissue_unet.config import Config
-from src.models.dl4mia_tissue_unet.model import UNet
+import os
+import time
+import random
 import glob
 import tifffile
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import cv2
-import os
-import time
 import torch.nn.functional as F
+from src.models.dl4mia_tissue_unet.dl4mia_utils.img_utils import preprocess_image
+from src.models.dl4mia_tissue_unet.dl4mia_utils.general import load_yaml
+from src.models.dl4mia_tissue_unet.model import UNet
 
 class Predicter():
 
@@ -44,7 +43,7 @@ class Predicter():
 
     def predict(self, image,gt=None):
         with torch.no_grad():
-            im = self.normalize(image[np.newaxis, ...], axis=(1, 2))  # added new axis already for channel
+            im = preprocess_image(image)
             multiple_y = im.shape[1] // 8
             multiple_x = im.shape[2] // 8
 
@@ -75,26 +74,6 @@ class Predicter():
 
         return pred_fg_thresholded, seed_map
 
-    def normalize(self, pic, pmin=1, pmax=99.8, axis=(1, 2), clip=False, eps=1e-20, dtype=np.float32):
-        ''' From dataset class '''
-        mi = np.percentile(pic, pmin, axis=axis, keepdims=True)
-        ma = np.percentile(pic, pmax, axis=axis, keepdims=True)
-        return self.normalize_mi_ma(pic, mi, ma, clip=clip, eps=eps, dtype=dtype)
-
-    def normalize_mi_ma(self, x, mi, ma, clip=False, eps=1e-20, dtype=np.float32):
-        ''' From dataset class '''
-        if dtype is not None:
-            x = x.astype(dtype, copy=False)
-            mi = dtype(mi) if np.isscalar(mi) else mi.astype(dtype, copy=False)
-            ma = dtype(ma) if np.isscalar(ma) else ma.astype(dtype, copy=False)
-            eps = dtype(eps)
-
-        x = (x - mi) / (ma - mi + eps)
-
-        if clip:
-            x = np.clip(x, 0, 1)
-
-        return x
         
 
 def prepare_plot(origImage, origMask, actMask, predMask, title=None):
@@ -102,7 +81,7 @@ def prepare_plot(origImage, origMask, actMask, predMask, title=None):
     figure, ax = plt.subplots(nrows=2, ncols=2, figsize=(7, 7), dpi=100)
 
     # plot the original image, its mask, and the predicted mask
-    ax[0,0].imshow(origImage)
+    ax[0,0].imshow(origImage,cmap='gray')
     ax[0,1].imshow(origMask)
     pos = ax[1,0].imshow(actMask)
     ax[1,1].imshow(predMask)
@@ -120,16 +99,14 @@ def prepare_plot(origImage, origMask, actMask, predMask, title=None):
         figure.suptitle(title)
     figure.show()
 
-def make_predictions(predicter, imagePath, config):
+def make_predictions(predicter, imagePath, maskPath):
     # find the filename and generate the path to ground truth
     # mask
     filename = imagePath.split(os.path.sep)[-1]
-    groundTruthPath = os.path.join(f"{config.DATASET_PATH}/test/masks",
-        filename)
 
     # load the ground-truth segmentation mask in grayscale mode
     # and resize it
-    gtMask = cv2.imread(groundTruthPath, 0)
+    gtMask = cv2.imread(maskPath, 0)
 
     # MATCH HOW THE DATASET "READS IN" FILES
     image = tifffile.imread(imagePath)
@@ -142,52 +119,30 @@ def make_predictions(predicter, imagePath, config):
     # prepare a plot for visualization
     prepare_plot(orig, gtMask, actMask, predMask,title=filename)
 
-def main(ckpt_path = None):
-    config = Config()
-    # load the image paths in our testing file and randomly select 10
-    # image paths
+def main(src_dir:str = "src/models/dl4mia_tissue_unet/results/20220824_144635", ckpt_name:str = 'best.pth'):
     print("[INFO] loading up test image paths...")
-    # imagePaths = open(config.TEST_PATHS).read().strip().split("\n")
-    imagePaths = glob.glob(f"{config.DATASET_PATH}/test/images/*.tif")
-    # imagePaths = np.random.choice(imagePaths, size=2)
+    test_dict_path = f"{src_dir}/test_dataset_dict.yaml"
+    test_dataset_dict = load_yaml(test_dict_path)
+    data_dir = test_dataset_dict['kwargs']['data_dir']
+    data_type = test_dataset_dict['kwargs']['data_type']
+    imagePaths = glob.glob(f"{data_dir}/{data_type}/images/*.tif")
+    maskPaths = glob.glob(f"{data_dir}/{data_type}/masks/*.tif")
 
-    # load our model from disk and flash it to the current device
-    print("[INFO] load up model...")
+    imagePaths, maskPaths = zip(*random.sample(list(zip(imagePaths, maskPaths)), 5))
 
-    if ckpt_path is None:
-        model_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/model.pth"
-        ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/trainable_last.pth"
-        ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/best.pth"
-        ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_103000_Colab_cpu/last.pth"
-
-        # model_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/model.pth"
-        # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/trainable_last.pth"
-        # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/best.pth"
-        # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_111400_Colab_gpu/last.pth"
-
-        # model_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/model.pth"
-        # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/trainable_last.pth"
-        # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/best.pth"
-        # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_111700_Colab_gpu/last.pth"
-
-        # model_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/model.pth"
-        # ckpt_train_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/trainable_last.pth"
-        # ckpt_best_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/best.pth"
-        # ckpt_path = "src/models/dl4mia_tissue_unet/results/20220823_101118/last.pth"
-
+    print("[INFO] loading up model...")
+    ckpt_path = f"{src_dir}/{ckpt_name}"
     t0 = time.time()
-    # P = Predicter.from_model(model_path)
     P = Predicter.from_ckpt(ckpt_path=ckpt_path)
     print(f"Load time: {time.time() - t0}")
 
     # iterate over the randomly selected test image paths
-    for path in imagePaths:
+    for ind in range(len(imagePaths)):
+        imagePath = imagePaths[ind]
+        maskPath = maskPaths[ind]
         # make predictions and visualize the results
-        make_predictions(P, path, config)
+        make_predictions(P, imagePath, maskPath)
     plt.show()
-
-
-
 
 
 if __name__ == '__main__':

@@ -16,6 +16,7 @@ setup(
           "tqdm",
           "jupyter",
           "pandas",
+          "pyyaml",
           "seaborn",
           "scikit-image",
           "colorspacious",

@@ -1,3 +1,4 @@
+import sys
 import torch
 import torchvision.transforms.functional as TF
 import numpy as np
@@ -19,17 +20,18 @@ class ResizeTransform:
 class NumpyToTensor:
     """ Convert numpy image array to Tensor """
 
-    def __init__(self, img_dtype:torch.dtype=torch.float, mask_dtype:torch.dtype=torch.float):
+    def __init__(self, img_dtype:str='float', mask_dtype:str='short'):
         """
         Arguments:
             dtype: Tensor dtype as torch.FloatTensor or torch.ShortTensor
         """
-        if img_dtype not in (torch.float, torch.short):
-            raise NotImplementedError(f"Unsuppported dtype: {img_dtype}. Must be torch.short or torch.float.")
-        if mask_dtype not in (torch.float, torch.short):
-            raise NotImplementedError(f"Unsuppported dtype: {mask_dtype}. Must be torch.short or torch.float.")
-        self.img_dtype = img_dtype
-        self.mask_dtype = mask_dtype
+        if img_dtype not in ('float', 'short'):
+            raise NotImplementedError(f"Unsuppported dtype: {img_dtype}. Must be in ('float', 'short').")
+        if mask_dtype not in ('float', 'short'):
+            raise NotImplementedError(f"Unsuppported dtype: {mask_dtype}. Must be in ('float', 'short').")
+        str_to_dtype = {"float":torch.float, "short":torch.short}
+        self.img_dtype = str_to_dtype[img_dtype]
+        self.mask_dtype = str_to_dtype[mask_dtype]
 
     def __call__(self, img:np.ndarray, mask:np.ndarray):
         img = torch.from_numpy(img).type(self.img_dtype)
@@ -107,29 +109,69 @@ class RandomJitter:
         return (img, mask)
 
 class Compose:
-    def __init__(self, transforms):
+    """
+    Composes several functional transforms together for data
+    augmentation/transformations. Composed transforms will be
+    applied sequentially to the image, and mask.
+    """
+
+    @classmethod
+    def from_dict(cls, dict_:dict):
+        """
+        Instantiate from string keyed dictionary of tranform classes
+        and their kwargs. Dictionary keys must be strings that match
+        class names in this file. Dictionary values must be a dictionary
+        with each key being a string kwarg name for the class and its
+        associated arugument value.
+
+        dict_ should take the form:
+        {'ClassName1': {'kwarg1': value1, ...}, ...}
+
+        Example:
+        ```
+            dict_ = {
+                'NumpyToTensor': {'img_dtype':'float', 'mask_dtype':'short'},
+                'RandomRotationTransform': {'angles':[90]},
+                'RandomFlip': {},
+                'ResizeTransform': {'size':(128, 128)},
+            }
+            my_transforms = Compose.from_dict(dict_)
+        ```
+        
+        Args:
+            dict_: dictionary of tranform classes and their kwargs
+        """
+        # init list of transforms
+        transforms = []
+
+        # iterate through dict and append transform classes with args to list
+        for classname, kwargs in dict_.items():
+            tform = getattr(sys.modules[__name__], classname)
+            transforms.append(tform(**kwargs))
+
+        return cls(transforms)
+
+    def __init__(self, transforms:list):
+        """
+        Example:
+        ```
+            transforms = [
+                NumpyToTensor(img_dtype='float', mask_dtype='short'),
+                RandomJitter(brightness=0.3, contrast=0.3, p=0.3),
+                RandomRotationTransform(angles=[90]),
+                RandomFlip(),
+                ResizeTransform(size=(128, 128)),
+            ]
+            Compose(transforms)
+        ```
+
+        Arguments:
+            transforms: list of tranform classes
+        """
         self.transforms = transforms
 
-    def __call__(self, image, target):
+    def __call__(self, image:np.ndarray, target:np.ndarray):
+        """ Apply composed transformations to the image and target """
         for t in self.transforms:
             image, target = t(image, target)
         return image, target
-
-# class MyTransforms:
-
-#     def __init__(self):
-#         self.T = transforms.Compose([
-#             NumpyToTensor(img_dtype=torch.float, mask_dtype=torch.short),
-#             RandomJitter(brightness=0.25, contrast=0.25, p=0.33),
-#             RandomFiveCrop(p=0.5),
-#             RandomRotationTransform(angles=[90]),
-#             RandomFlip(),
-#             ResizeTransform(size=(128, 128))
-#         ])
-
-#     def __call__(self,img:np.ndarray, mask:np.ndarray):
-#         """ Expects sample to be dict including at least the following keys:
-#         {'image':np.ndarray,'semantic_mask':np.ndarray,...}
-#         """
-#         img_T, mask_T = self.T(img, mask)
-#         return img_T, mask_T
