@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 import torch
 
+
 class Config:
     """
     Sets parameters to train U-Net segmentation network. Defines parameters
@@ -65,24 +66,29 @@ class Config:
 
         # transformations for data augmentation
         self.TRANSFORMS = {
-            'NumpyToTensor': {'img_dtype':'float', 'mask_dtype':'short'},
-            'RandomJitter': {'brightness':0.3, 'contrast':0.3, 'p':0.3},
-            'RandomRotationTransform': {'angles':[90]},
-            'RandomFlip': {},
-            'ResizeTransform': {'size':in_size},
+            "NumpyToTensor": {"img_dtype": "float", "mask_dtype": "short"},
+            "RandomJitter": {"brightness": 0.3, "contrast": 0.3, "p": 0.3},
+            "RandomRotationTransform": {"angles": [0, 90, 180]},
+            "RandomFlip": {},
+            "ResizeTransform": {"size": in_size},
         }
 
         # Create dataset dictionaries for the dataloader
-        self.TRAIN_DATASET_DICT = self._create_dataset_dict(data_type="train", transforms=self.TRANSFORMS)
-        self.VAL_DATASET_DICT = self._create_dataset_dict(data_type="val", transforms=self.TRANSFORMS)
-        self.TEST_DATASET_DICT = self._create_dataset_dict(data_type="test", transforms=None)
+        self.TRAIN_DATASET_DICT = self._create_dataset_dict(
+            data_type="train", transforms=self.TRANSFORMS
+        )
+        self.VAL_DATASET_DICT = self._create_dataset_dict(
+            data_type="val", transforms=self.TRANSFORMS
+        )
+        self.TEST_DATASET_DICT = self._create_dataset_dict(
+            data_type="test", transforms=None
+        )
 
         # create the model dictionary used to intialize/create the unet
         self.MODEL_DICT = self._create_model_dict(name="unet")
 
         # create configuration for training the model
         self.CONFIG_DICT = self._create_config_dict(save=save)
-
 
     def _create_dataset_dict(self, data_type: str, transforms: dict = None):
         """
@@ -92,7 +98,11 @@ class Config:
         Args:
             data_type: The type of dataset to be created (train, val, test)
         """
-        assert data_type in ["train", "val", "test"], "Data must be 'train', 'val', or 'test'"
+        assert data_type in [
+            "train",
+            "val",
+            "test",
+        ], "Data must be 'train', 'val', or 'test'"
         dataset_dict = {
             "kwargs": {
                 "data_dir": self.DATASET_PATH,
