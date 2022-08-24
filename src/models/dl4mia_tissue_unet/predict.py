@@ -57,7 +57,7 @@ class Predicter():
                 diff_x = 0
             p2d = (diff_x // 2, diff_x - diff_x // 2, diff_y // 2, diff_y - diff_y // 2)  # last dim, second last dim
 
-            im = F.pad(torch.from_numpy(im), p2d, "reflect")
+            im = F.pad(torch.from_numpy(im), p2d, "reflect").to(self.device)
 
             output = self.model(im)  # B 3 Y X
             # output_softmax = F.softmax(output[0], dim=0)
