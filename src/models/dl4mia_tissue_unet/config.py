@@ -92,13 +92,13 @@ class Config:
         Args:
             data_type: The type of dataset to be created (train, val, test)
         """
-        assert data_type in ["train", "val", "test"], "Data must be 'train', 'va', or 'test'"
+        assert data_type in ["train", "val", "test"], "Data must be 'train', 'val', or 'test'"
         dataset_dict = {
             "kwargs": {
                 "data_dir": self.DATASET_PATH,
                 "data_type": data_type,
                 "size": len(
-                    os.listdir(os.path.join(self.DATASET_PATH, "train", "images"))
+                    os.listdir(os.path.join(self.DATASET_PATH, data_type, "images"))
                 ),
                 "transform": transforms,
             },
