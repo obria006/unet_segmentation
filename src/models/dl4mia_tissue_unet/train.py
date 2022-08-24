@@ -215,17 +215,18 @@ def main(
     print('Training dictionary:')
     print_dict(train_dataset_dict)
     val_dataset_dict = cfg.VAL_DATASET_DICT
-    print("Validation dictionary:")
+    print("\nValidation dictionary:")
     print_dict(val_dataset_dict)
     test_dataset_dict = cfg.TEST_DATASET_DICT
-    print("Test dictionary:")
+    print("\nTest dictionary:")
     print_dict(test_dataset_dict)
     model_dict = cfg.MODEL_DICT
-    print("Model dictionary:")
+    print("\nModel dictionary:")
     print_dict(model_dict)
     config_dict = cfg.CONFIG_DICT
-    print("Config dictionary:")
+    print("\nConfig dictionary:")
     print_dict(config_dict)
+    print()
     model_trainer = Trainer(train_dataset_dict, val_dataset_dict, test_dataset_dict, model_dict, config_dict)
     model_trainer.begin_training()
 
