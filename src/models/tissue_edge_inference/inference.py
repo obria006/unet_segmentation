@@ -198,8 +198,8 @@ class TissueEdgeClassifier:
 
     def _get_mask_edges(self, mask: np.ndarray) -> np.ndarray:
         """
-        Dilate mask w/ 3x3 kernel and subtract orignal to get mask edges.
-        Results in the edge being the first pixels 'outside' of the mask.
+        Erode mask w/ 3x3 kernel and subtract it from the original mask.
+        Results in the edge being the pixels exactly on the edge of the mask.
 
         Args:
             mask: The mask to dilate.
@@ -207,8 +207,8 @@ class TissueEdgeClassifier:
         returns the mask edges
         """
         kernel = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(3, 3))
-        dilated = cv2.dilate(src=mask, kernel=kernel)
-        edges = dilated - mask
+        eroded = cv2.erode(src=mask, kernel=kernel)
+        edges = mask - eroded
         return edges
 
     def _hull_overlap_ratio(
