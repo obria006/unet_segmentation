@@ -10,13 +10,11 @@ import tifffile
 from matplotlib import pyplot as plt
 from src.utils.logging import StandardLogger
 from src.models.dl4mia_tissue_unet.predict import Predicter
+from src.models.tissue_edge_inference.edge_utils.general import inv_dictionary
 from src.models.tissue_edge_inference.edge_utils.error_utils import NoEdgesFoundError
 from src.models.tissue_edge_inference.edge_utils.img_utils import (
-    blend_images,
     overlay_image,
-    n_largest_components,
     rm_components_by_size,
-    binary_imfill,
 )
 
 
@@ -109,8 +107,7 @@ class TissueEdgeClassifier:
 
         returns np.ndarray of preprocessed mask
         """
-        # # get the largest contiguous region
-        # preprocessed = n_largest_components(mask=np.copy(mask), n=1)
+        # Remove spurious fg/bg regions based on statistics of training data
         BG_5TH_PTILE = 0.038
         FG_5TH_PTILE = 0.043
         preprocessed = rm_components_by_size(
@@ -121,17 +118,45 @@ class TissueEdgeClassifier:
         )
         preprocessed = preprocessed.astype(np.uint8)
 
-        # Fill holes
-        # TODO fill bg up to size of specified area
-        # preprocessed = np.copy(mask).astype(np.uint8)
-        # preprocessed = binary_imfill(mask=preprocessed, region="bg")
-        # preprocessed = binary_imfill(mask=preprocessed, region="fg")
-        # # preprocessed = cv2.morphologyEx(preprocessed, cv2.MORPH_CLOSE, np.ones((7, 7)))
-
         # smooth edges
         preprocessed = cv2.medianBlur(preprocessed, ksize=7)
 
         return preprocessed
+
+    def _associate_edge_to_mask(
+        self, mask: np.ndarray, num_edge_labels: int, edge_cc: np.ndarray
+    ):
+        """
+        Associates and edge label with a detected foreground region in `mask`.
+        Returns dictionary associating labels and a connected component labeled
+        `mask` image.
+
+        Args:
+            mask: detected foreground image
+            num_edge_labels: number of labeled edges from connected components
+            edge_cc: connected component edge labels
+
+        Returns:
+            edge_to_mask: dictionary associating edge label to mask label
+            mask_cc: np.ndarray of connected components in `mask`
+        """
+        # Get mask and edge connected components
+        num_mask_labels, mask_cc = cv2.connectedComponents(mask)
+
+        # init dictionary to associate edge with mask
+        edge_to_mask = {}
+
+        # Loop over edges. If edge intersects with mask region, then associate
+        # edge label with mask label
+        for edge_label in range(1, num_edge_labels):
+            roi_edge = edge_cc == edge_label
+            for mask_label in range(1, num_mask_labels):
+                roi_mask = mask_cc == mask_label
+                if np.any(np.bitwise_and(roi_edge, roi_mask)):
+                    edge_to_mask[edge_label] = mask_label
+                    break
+
+        return edge_to_mask, mask_cc
 
     def _label_mask_edge(self, mask: np.ndarray) -> np.ndarray:
         """
@@ -142,14 +167,11 @@ class TissueEdgeClassifier:
         Evaluated by computing area overlap of convex hull for each edge with
         the tissue mask.
 
-        For one edge:
-            hull and mask overlap > 50% -> basal (else apical)
-
         For two edges:
             larger hull and mask overlap -> basal (other apical)
 
-        Large overlap between hull and mask -> basal
-        Small overlap between hull and mask -> apical
+        else:
+            hull and mask overlap > 50% -> basal (else apical)
 
         Args:
             mask: binary mask of segmented tissue
@@ -163,6 +185,11 @@ class TissueEdgeClassifier:
         num_labels, edge_cc = cv2.connectedComponents(edges)
         if num_labels == 1:
             raise NoEdgesFoundError("Could not detect any edges in mask")
+
+        # Associate edge with a mask region
+        edge_to_mask, mask_cc = self._associate_edge_to_mask(
+            mask=mask, num_edge_labels=num_labels, edge_cc=edge_cc
+        )
 
         # Iterate through the first 2 labels (ignore 0 label since its background)
         # create dict of {'label1': overlap_ratio1, 'label2': overlap_ratio2}
@@ -180,7 +207,7 @@ class TissueEdgeClassifier:
         # Relabel the edges according to their overlap ratio and the edge_dict
         # attribute.
         semantic_labels = self._label_by_overlap_ratio(
-            edge_cc=edge_cc, overlap_dict=label_overlap
+            edge_cc=edge_cc, overlap_dict=label_overlap, edge_to_region=edge_to_mask
         )
         semantic_edges = self._semantic_edge_image(
             edge_cc=edge_cc, sem_labels=semantic_labels
@@ -224,9 +251,6 @@ class TissueEdgeClassifier:
 
         returns the ratio between the hull and mask overlap area to hull area
         """
-        # get convex hull of the edge
-        hull = convex_hull_image(edge)
-
         # compute the edgeless hull and its area
         ne_hull = (hull == 1) & (edge == 0)
         ne_hull_area = np.sum(ne_hull)
@@ -237,14 +261,21 @@ class TissueEdgeClassifier:
 
         return area_ratio
 
-    def _label_by_overlap_ratio(self, edge_cc: np.ndarray, overlap_dict: dict) -> dict:
+    def _label_by_overlap_ratio(
+        self, edge_cc: np.ndarray, overlap_dict: dict, edge_to_region: dict
+    ) -> dict:
         """
-        Relabel connected component edges based on the convex hull overlap.
-        50% or more overlap between mask and hull is basal (else apical)
+        Relabel connected component edges based on the convex hull and mask overlap.
+
+        if 2 edges on a single tissue region:
+            basal = larger overlap and apical = smaller overlap
+        else:
+            50% overlap = basal else apical
 
         Args:
             edge_cc: np.ndarray of connected component edges (can have at most 2 edges)
             overlap_dict: dict of overlap ratios for each edge label
+            edge_to_dict: dict associating edge label with a fg region (mask) label
 
         Returns:
             dict assoicating connected components label with tissue type label ('apical' or 'basal')
@@ -252,18 +283,45 @@ class TissueEdgeClassifier:
         # Ensure each edge has a overlap ratio
         edge_labels = np.sort(np.unique(edge_cc))[1:]  # ignore the 0 index since bg
         dict_labels = np.sort(np.array(list(overlap_dict.keys())))
-        if not np.all(edge_labels == dict_labels):
-            raise ValueError("All edges must have an overlap ratio")
+        reg_labels = np.sort(np.array(list(edge_to_region.keys())))
+        if not np.all((edge_labels == dict_labels) & (dict_labels == reg_labels)):
+            raise ValueError("All edges must have an overlap ratio and region")
+
+        # Invert dictionary to get dictionary of {mask_label:[edge_label1, edge_label2,...],...}
+        region_to_edge = inv_dictionary(edge_to_region)
 
         # Dictionary to store the edge type for each edge
         sem_labels = {}
 
-        # basal if overlap>50%, else apical
+        # Iterate through each edge and assign a semantic label
         for label, overlap in overlap_dict.items():
-            if overlap > 0.5:
-                sem_labels[label] = "basal"
+            edge_region = edge_to_region[label]
+            regions_edges = region_to_edge[edge_region]
+            # 1 edge on tissue: 50% overlap or more = basal, else apical
+            if len(regions_edges) == 1:
+                if overlap > 0.5:
+                    sem_labels[label] = "basal"
+                else:
+                    sem_labels[label] = "apical"
+            # 2 edge on tissue: larger overlap = basal, smaller overlap = apical
+            elif len(regions_edges) == 2:
+                other_edge_label = np.setxor1d(
+                    np.array(regions_edges), np.array(label)
+                )[0]
+                other_overlap = overlap_dict[other_edge_label]
+                if overlap > other_overlap:
+                    sem_labels[label] = "basal"
+                else:
+                    sem_labels[label] = "apical"
+            # more than 1 edge on tissue: 50% overlap or more = basal, else apical
             else:
-                sem_labels[label] = "apical"
+                if overlap > 0.5:
+                    sem_labels[label] = "basal"
+                else:
+                    sem_labels[label] = "apical"
+                self._logger.warning(
+                    f"Unusual edge detection having {len(regions_edges)} edges. Usually a piece of tissue has 1 or 2 edges."
+                )
 
         return sem_labels
 
@@ -404,7 +462,7 @@ if __name__ == "__main__":
         try:
             edge_dict, edge_cc, sem_labels, new_mask = TC.classify_img(real_img)
             t1 = time.time()
-            print(f"Classify time: {t1 - t0}")
+            print(f"Total time:\t{t1 - t0}")
             overlay = overlay_image(
                 image=real_img,
                 edge_label_dict=sem_labels,
