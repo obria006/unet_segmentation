@@ -37,6 +37,11 @@ class TissueEdgeClassifier:
     """
 
     def __init__(self, segmenter: Predicter, train_mask_dir: str):
+        """
+        Args:
+            segmenter: Model to perform tissue segmentation
+            train_mask_dir: Path to the training masks for compiling statistics
+        """
         self._logger = StandardLogger(__name__)
         self.segmenter = segmenter
         self.edge_dict = {"apical": 1, "basal": 2}
@@ -54,7 +59,11 @@ class TissueEdgeClassifier:
         Args:
             img (np.ndarray): Image of tissue to classify
 
-        returns dictionary of apical and basal edge pixel coordinates
+        Returns:
+            edge_cc: connected component labeled edge image
+            mask_cc: connected component labeled mask/tissue image
+            edge_df: dataframe of edge info (label, mask, overlap, size, and semantic)
+            mask: segmented tissue mask
         """
         try:
             # Use segmenter to segment tissue into binary mask
@@ -78,9 +87,12 @@ class TissueEdgeClassifier:
         of {'apical':apical_edge_list, 'basal':basal_edge_list}.
 
         Args:
-            img (np.ndarray): Tissue mask to classify
+            mask (np.ndarray): Tissue mask to classify
 
-        returns dictionary of apical and basal edge pixel coordinates
+        Returns:
+            edge_cc: connected component labeled edge image
+            mask_cc: connected component labeled mask/tissue image
+            edge_df: dataframe of edge info (label, mask, overlap, size, and semantic)
         """
         try:
             # preprocess mask to fill in holes
@@ -99,13 +111,14 @@ class TissueEdgeClassifier:
 
     def _preprocess_mask(self, mask: np.ndarray) -> np.ndarray:
         """
-        Preprocess mask to fill in holes, select the largest contiguous region,
+        Preprocess mask by removing small fg/bg regions based on training mask statistics
         and smooth the mask edges
 
         Args:
             mask (np.ndarray): Tissue mask to preprocess
 
-        returns np.ndarray of preprocessed mask
+        Returns:
+            preprocced: preprocessed mask image
         """
         # Remove spurious fg/bg regions based on statistics of training data
         preprocessed = rm_components_by_size(
@@ -165,21 +178,23 @@ class TissueEdgeClassifier:
         Evaluated by computing area overlap of convex hull for each edge with
         the tissue mask.
 
-        For two edges:
+        Classification scheme:
+            2 edges: larger overlap is basal and smaller overlap is apical
+            otherswise: overlap > 50% is basal and overlap < 50% is apical
             larger hull and mask overlap -> basal (other apical)
-
-        else:
-            hull and mask overlap > 50% -> basal (else apical)
 
         Args:
             mask: binary mask of segmented tissue
 
-        returns numpy array with labels
+        Returns:
+            edge_cc: connected component labeled edge image
+            mask_cc: connected component labeled mask/tissue image
+            edge_df: dataframe of edge info (label, mask, overlap, size, and semantic)
         """
         # Get binary mask of mask edges
         edges = self._get_mask_edges(mask=mask)
 
-        # get labeled connected components in image (bg=0)
+        # get labeled connected components in image (can ignore background @ 0 index)
         num_labels, edge_cc, edge_stats, _ = cv2.connectedComponentsWithStats(edges)
         if num_labels == 1:
             raise NoEdgesFoundError("Could not detect any edges in mask")
@@ -193,7 +208,7 @@ class TissueEdgeClassifier:
 
         # Iterate through the first 2 labels (ignore 0 label since its background)
         # create dict of {'label1': overlap_ratio1, 'label2': overlap_ratio2}
-        label_overlap = {}
+        edge_to_overlap = {}
         for label in np.unique(edge_cc):
             if label == 0:
                 continue
@@ -202,23 +217,23 @@ class TissueEdgeClassifier:
             overlap_ratio = self._hull_overlap_ratio(
                 edge=edge_mask, hull=hull, mask=mask
             )
-            label_overlap[label] = overlap_ratio
+            edge_to_overlap[label] = overlap_ratio
 
         # Relabel the edges according to their overlap ratio and the edge_dict
         # attribute.
-        semantic_labels = self._label_by_overlap_ratio(
-            edge_cc=edge_cc, overlap_dict=label_overlap, edge_to_region=edge_to_mask
+        edge_to_semantic = self._label_by_overlap_ratio(
+            edge_cc=edge_cc, edge_to_overlap=edge_to_overlap, edge_to_mask=edge_to_mask
         )
         semantic_edges = self._semantic_edge_image(
-            edge_cc=edge_cc, sem_labels=semantic_labels
+            edge_cc=edge_cc, edge_to_semantic=edge_to_semantic
         )
 
         # Create dataframe of information
         edge_df = self._to_df(
             edge_size=edge_size,
             edge_to_mask=edge_to_mask,
-            edge_fg_overlap=label_overlap,
-            edge_to_semantic=semantic_labels,
+            edge_to_overlap=edge_to_overlap,
+            edge_to_semantic=edge_to_semantic,
         )
 
         return edge_cc, mask_cc, edge_df
@@ -227,26 +242,27 @@ class TissueEdgeClassifier:
         self,
         edge_size: dict,
         edge_to_mask: dict,
-        edge_fg_overlap: dict,
+        edge_to_overlap: dict,
         edge_to_semantic: dict,
     ):
         """
-        Create DataFrame of where each edge associated to a mask region, overlap ratio, and
-        semantic label
+        Create DataFrame of where each edge associated to its edge label, its size, the mask
+        region it belongs to, its convex hull overlap with the mask, and its semanitc label.
 
         Args:
             edge_size (dict): Dictionary of edge sizes
             edge_to_mask (dict): Dictionary of accociating edge label to mask label
-            edge_fg_overlap (dict): Dictionary of accociating edge label to overlap ratio
+            edge_to_overlap (dict): Dictionary of accociating edge label to overlap ratio
             edge_to_semantic (dict): Dictionary of accociating edge label to semantic label
 
         Returns:
             pandas DataFrame indexed by edge label with corresponding edge information
+                columns: ["edge", "size", "mask", "overlap", "semantic]
         """
         # Validate same keys
         size_keys = np.sort(np.array(list(edge_size.keys())))
         mask_keys = np.sort(np.array(list(edge_to_mask.keys())))
-        overlap_keys = np.sort(np.array(list(edge_fg_overlap.keys())))
+        overlap_keys = np.sort(np.array(list(edge_to_overlap.keys())))
         sem_keys = np.sort(np.array(list(edge_to_semantic.keys())))
         if not np.all(
             (size_keys == mask_keys)
@@ -259,7 +275,7 @@ class TissueEdgeClassifier:
         edge_labels = [key for key in mask_keys]
         sizes = [edge_size[key] for key in size_keys]
         mask_labels = [edge_to_mask[key] for key in mask_keys]
-        overlaps = [edge_fg_overlap[key] for key in overlap_keys]
+        overlaps = [edge_to_overlap[key] for key in overlap_keys]
         sem_labels = [edge_to_semantic[key] for key in sem_keys]
         master_dict = {
             "edge": edge_labels,
@@ -282,7 +298,8 @@ class TissueEdgeClassifier:
         Args:
             mask: The mask to dilate.
 
-        returns the mask edges
+        Return:
+            edges: numpy.ndarray of mask edges
         """
         kernel = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(3, 3))
         eroded = cv2.erode(src=mask, kernel=kernel)
@@ -300,7 +317,8 @@ class TissueEdgeClassifier:
             hull: binary mask of convex hull
             mask: binary mask of tissue
 
-        returns the ratio between the hull and mask overlap area to hull area
+        Return:
+            area_ratio: ratio of overlap between convex hull and mask
         """
         # compute the edgeless hull and its area
         ne_hull = (hull == 1) & (edge == 0)
@@ -313,7 +331,7 @@ class TissueEdgeClassifier:
         return area_ratio
 
     def _label_by_overlap_ratio(
-        self, edge_cc: np.ndarray, overlap_dict: dict, edge_to_region: dict
+        self, edge_cc: np.ndarray, edge_to_overlap: dict, edge_to_mask: dict
     ) -> dict:
         """
         Relabel connected component edges based on the convex hull and mask overlap.
@@ -325,73 +343,73 @@ class TissueEdgeClassifier:
 
         Args:
             edge_cc: np.ndarray of connected component edges (can have at most 2 edges)
-            overlap_dict: dict of overlap ratios for each edge label
-            edge_to_dict: dict associating edge label with a fg region (mask) label
+            edge_to_overlap: dict of overlap ratios for each edge label
+            edge_to_mask: dict associating edge label with a fg region (mask) label
 
         Returns:
             dict assoicating connected components label with tissue type label ('apical' or 'basal')
         """
         # Ensure each edge has a overlap ratio
         edge_labels = np.sort(np.unique(edge_cc))[1:]  # ignore the 0 index since bg
-        dict_labels = np.sort(np.array(list(overlap_dict.keys())))
-        reg_labels = np.sort(np.array(list(edge_to_region.keys())))
-        if not np.all((edge_labels == dict_labels) & (dict_labels == reg_labels)):
+        overlap_keys = np.sort(np.array(list(edge_to_overlap.keys())))
+        mask_keys = np.sort(np.array(list(edge_to_mask.keys())))
+        if not np.all((edge_labels == overlap_keys) & (overlap_keys == mask_keys)):
             raise ValueError("All edges must have an overlap ratio and region")
 
         # Invert dictionary to get dictionary of {mask_label:[edge_label1, edge_label2,...],...}
-        region_to_edge = inv_dictionary(edge_to_region)
+        region_to_edge = inv_dictionary(edge_to_mask)
 
         # Dictionary to store the edge type for each edge
-        sem_labels = {}
+        edge_to_semantic = {}
 
         # Iterate through each edge and assign a semantic label
-        for label, overlap in overlap_dict.items():
-            edge_region = edge_to_region[label]
+        for label, overlap in edge_to_overlap.items():
+            edge_region = edge_to_mask[label]
             regions_edges = region_to_edge[edge_region]
             # 1 edge on tissue: 50% overlap or more = basal, else apical
             if len(regions_edges) == 1:
                 if overlap > 0.5:
-                    sem_labels[label] = "basal"
+                    edge_to_semantic[label] = "basal"
                 else:
-                    sem_labels[label] = "apical"
+                    edge_to_semantic[label] = "apical"
             # 2 edge on tissue: larger overlap = basal, smaller overlap = apical
             elif len(regions_edges) == 2:
                 other_edge_label = np.setxor1d(
                     np.array(regions_edges), np.array(label)
                 )[0]
-                other_overlap = overlap_dict[other_edge_label]
+                other_overlap = edge_to_overlap[other_edge_label]
                 if overlap > other_overlap:
-                    sem_labels[label] = "basal"
+                    edge_to_semantic[label] = "basal"
                 else:
-                    sem_labels[label] = "apical"
+                    edge_to_semantic[label] = "apical"
             # more than 1 edge on tissue: 50% overlap or more = basal, else apical
             else:
                 if overlap > 0.5:
-                    sem_labels[label] = "basal"
+                    edge_to_semantic[label] = "basal"
                 else:
-                    sem_labels[label] = "apical"
+                    edge_to_semantic[label] = "apical"
                 self._logger.warning(
                     f"Unusual edge detection having {len(regions_edges)} edges. Usually a piece of tissue has 1 or 2 edges."
                 )
 
-        return sem_labels
+        return edge_to_semantic
 
-    def _semantic_edge_image(self, edge_cc: np.ndarray, sem_labels: dict):
+    def _semantic_edge_image(self, edge_cc: np.ndarray, edge_to_semantic: dict):
         """
         Create a new image of where each edge in the connected component gets
         assinged an new value based on its classification as 'apical' or 'basal'
-        in the sem_labels dictionary.
+        in the edge_to_semantic dictionary.
 
         Args:
             edge_cc: connected component edge image
-            sem_labels: Association between labels in `edge_cc` with 'apical' or 'basal'
+            edge_to_semantic: Association between labels in `edge_cc` with 'apical' or 'basal'
 
         Returns:
             np.ndarray where each edge is semantically labeled
         """
         # Ensure each edge has a overlap ratio
         edge_labels = np.sort(np.unique(edge_cc))[1:]  # ignore the 0 index since bg
-        dict_labels = np.sort(np.array(list(sem_labels.keys())))
+        dict_labels = np.sort(np.array(list(edge_to_semantic.keys())))
         for label in dict_labels:
             if label not in edge_labels.tolist():
                 raise ValueError(
@@ -400,7 +418,7 @@ class TissueEdgeClassifier:
 
         # Relabel each edge with appropriate value corresponding to basal or apical
         semantic_edges = np.zeros_like(edge_cc)
-        for label, edge_type in sem_labels.items():
+        for label, edge_type in edge_to_semantic.items():
             edge_mask = edge_cc == label
             semantic_edges[edge_mask] = self.edge_dict[edge_type]
 
@@ -451,17 +469,16 @@ if __name__ == "__main__":
         mask_img = tifffile.imread(mask_path)
         real_img = tifffile.imread(img_path)
         t0 = time.time()
-        # edge_dict, edge_cc, sem_labels = TC.classify_mask(mask_img)
         try:
             edge_cc, mask_cc, edge_df, new_mask = TC.classify_img(real_img)
-            sem_labels = {
+            edge_to_semantic = {
                 ind: edge_df.loc[ind, "semantic"] for ind in list(edge_df.index)
             }
             t1 = time.time()
             print(f"Total time:\t{t1 - t0}")
             overlay = overlay_image(
                 image=real_img,
-                edge_label_dict=sem_labels,
+                edge_label_dict=edge_to_semantic,
                 mask=new_mask,
                 edge_labels=edge_cc,
             )
