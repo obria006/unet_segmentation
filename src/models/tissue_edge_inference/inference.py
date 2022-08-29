@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 from skimage.morphology import convex_hull_image
 import tifffile
+import pandas as pd
 from matplotlib import pyplot as plt
 from src.utils.logging import StandardLogger
 from src.models.dl4mia_tissue_unet.predict import Predicter
@@ -61,7 +62,7 @@ class TissueEdgeClassifier:
             mask = mask.astype(np.uint8)
 
             # Classify edges of the mask as apical/basal
-            edge_dict, edge_cc, sem_labels, mask = self.classify_mask(mask)
+            edge_cc, mask_cc, edge_df = self.classify_mask(mask)
         except NoEdgesFoundError as e:
             self._logger.warning(e)
         except:
@@ -69,7 +70,7 @@ class TissueEdgeClassifier:
             raise
         else:
 
-            return edge_dict, edge_cc, sem_labels, mask
+            return edge_cc, mask_cc, edge_df, mask
 
     def classify_mask(self, mask: np.ndarray) -> dict:
         """
@@ -86,22 +87,15 @@ class TissueEdgeClassifier:
             processed_mask = self._preprocess_mask(mask)
 
             # Label edges of binary mask with 1 for apical and 2 for basal
-            (
-                edge_cc,
-                sem_labels,
-                sem_edge_img,
-                sem_largest_edge_img,
-            ) = self._label_mask_edge(processed_mask)
+            (edge_cc, mask_cc, edge_df) = self._label_mask_edge(processed_mask)
 
-            # Extract pixel coordinates of apical and basal edges to dictionary
-            edge_dict = self._get_edge_dict(sem_edge_img)
         except NoEdgesFoundError as e:
             self._logger.warning(e)
         except:
             self._logger.exception("Error while classifying mask")
         else:
 
-            return edge_dict, edge_cc, sem_labels, mask
+            return edge_cc, mask_cc, edge_df
 
     def _preprocess_mask(self, mask: np.ndarray) -> np.ndarray:
         """
@@ -186,9 +180,11 @@ class TissueEdgeClassifier:
         edges = self._get_mask_edges(mask=mask)
 
         # get labeled connected components in image (bg=0)
-        num_labels, edge_cc = cv2.connectedComponents(edges)
+        num_labels, edge_cc, edge_stats, _ = cv2.connectedComponentsWithStats(edges)
         if num_labels == 1:
             raise NoEdgesFoundError("Could not detect any edges in mask")
+        edge_areas = list(edge_stats[1:, cv2.CC_STAT_AREA])
+        edge_size = {label: area for label, area in enumerate(edge_areas, start=1)}
 
         # Associate edge with a mask region
         edge_to_mask, mask_cc = self._associate_edge_to_mask(
@@ -217,15 +213,66 @@ class TissueEdgeClassifier:
             edge_cc=edge_cc, sem_labels=semantic_labels
         )
 
-        # Post process the edges to get the largest apical and largest basal edge
-        largest_semantic_labels = self._postprocess_edges(
-            edge_cc=edge_cc, sem_labels=semantic_labels
-        )
-        largest_semantic_edges = semantic_edges = self._semantic_edge_image(
-            edge_cc=edge_cc, sem_labels=largest_semantic_labels
+        # Create dataframe of information
+        edge_df = self._to_df(
+            edge_size=edge_size,
+            edge_to_mask=edge_to_mask,
+            edge_fg_overlap=label_overlap,
+            edge_to_semantic=semantic_labels,
         )
 
-        return edge_cc, semantic_labels, semantic_edges, largest_semantic_edges
+        return edge_cc, mask_cc, edge_df
+
+    def _to_df(
+        self,
+        edge_size: dict,
+        edge_to_mask: dict,
+        edge_fg_overlap: dict,
+        edge_to_semantic: dict,
+    ):
+        """
+        Create DataFrame of where each edge associated to a mask region, overlap ratio, and
+        semantic label
+
+        Args:
+            edge_size (dict): Dictionary of edge sizes
+            edge_to_mask (dict): Dictionary of accociating edge label to mask label
+            edge_fg_overlap (dict): Dictionary of accociating edge label to overlap ratio
+            edge_to_semantic (dict): Dictionary of accociating edge label to semantic label
+
+        Returns:
+            pandas DataFrame indexed by edge label with corresponding edge information
+        """
+        # Validate same keys
+        size_keys = np.sort(np.array(list(edge_size.keys())))
+        mask_keys = np.sort(np.array(list(edge_to_mask.keys())))
+        overlap_keys = np.sort(np.array(list(edge_fg_overlap.keys())))
+        sem_keys = np.sort(np.array(list(edge_to_semantic.keys())))
+        if not np.all(
+            (size_keys == mask_keys)
+            & (mask_keys == overlap_keys)
+            & (overlap_keys == sem_keys)
+        ):
+            raise KeyError(f"All keys in must be same")
+
+        # Create master dictionary
+        edge_labels = [key for key in mask_keys]
+        sizes = [edge_size[key] for key in size_keys]
+        mask_labels = [edge_to_mask[key] for key in mask_keys]
+        overlaps = [edge_fg_overlap[key] for key in overlap_keys]
+        sem_labels = [edge_to_semantic[key] for key in sem_keys]
+        master_dict = {
+            "edge": edge_labels,
+            "size": sizes,
+            "mask": mask_labels,
+            "overlap": overlaps,
+            "semantic": sem_labels,
+        }
+
+        # Dictioanry to dataframe
+        df = pd.DataFrame(data=master_dict, index=edge_labels)
+
+        return df
 
     def _get_mask_edges(self, mask: np.ndarray) -> np.ndarray:
         """
@@ -359,65 +406,6 @@ class TissueEdgeClassifier:
 
         return semantic_edges
 
-    def _get_edge_dict(self, edge_img: np.ndarray) -> dict:
-        """
-        Return dict of {'apical':apical_edge_list, 'basal':basal_edge_list}
-        from an image labeld as 1=apical and 2=basal.
-
-        Args:
-            edge_img (np.ndarray): Edge classified image with apical=1 and basal=2
-
-        returns dictionary of apical and basal edge pixel coordinates
-        """
-        apical_edges = edge_img == self.edge_dict["apical"]
-        apical_inds = np.where(apical_edges != 0)
-        apical_coords = tuple(zip(*apical_inds))
-        basal_edges = edge_img == self.edge_dict["basal"]
-        basal_inds = np.where(basal_edges != 0)
-        basal_coords = tuple(zip(*basal_inds))
-        return {"apical": apical_coords, "basal": basal_coords}
-
-    def _postprocess_edges(self, edge_cc: np.ndarray, sem_labels: dict):
-        """
-        Postprocess the edges.
-
-        Args:
-            edge_cc: connected component edge image
-            sem_labels: Association between labels in `edge_cc` with 'apical' or 'basal'
-
-        Returns:
-            np.ndarray:
-        """
-        # Ensure each edge has a overlap ratio
-        edge_labels = np.sort(np.unique(edge_cc))[1:]  # ignore the 0 index since bg
-        dict_labels = np.sort(np.array(list(sem_labels.keys())))
-        if not np.all(edge_labels == dict_labels):
-            raise ValueError("All edges must have an have a sem_labels")
-
-        # Get the largest edge of each type
-        largest_apical_size = 0
-        largest_apical_label = None
-        largest_basal_size = 0
-        largest_basal_label = None
-        for label, edge_type in sem_labels.items():
-            edge_size = np.sum(edge_cc[edge_cc == label])
-            if edge_type == "apical":
-                if edge_size > largest_apical_size:
-                    largest_apical_size = edge_size
-                    largest_apical_label = label
-            if edge_type == "basal":
-                if edge_size > largest_basal_size:
-                    largest_basal_size = edge_size
-                    largest_basal_label = label
-
-        # Make dictionary associating largeset edge w/ its edge type
-        largest_edges = {}
-        for label in [largest_apical_label, largest_basal_label]:
-            if label is not None:
-                largest_edges[label] = sem_labels[label]
-
-        return largest_edges
-
 
 def make_plot(imgs: list):
     from math import ceil, sqrt
@@ -465,7 +453,10 @@ if __name__ == "__main__":
         t0 = time.time()
         # edge_dict, edge_cc, sem_labels = TC.classify_mask(mask_img)
         try:
-            edge_dict, edge_cc, sem_labels, new_mask = TC.classify_img(real_img)
+            edge_cc, mask_cc, edge_df, new_mask = TC.classify_img(real_img)
+            sem_labels = {
+                ind: edge_df.loc[ind, "semantic"] for ind in list(edge_df.index)
+            }
             t1 = time.time()
             print(f"Total time:\t{t1 - t0}")
             overlay = overlay_image(
