@@ -12,6 +12,7 @@ from src.utils.logging import StandardLogger
 from src.models.dl4mia_tissue_unet.predict import Predicter
 from src.models.tissue_edge_inference.edge_utils.general import inv_dictionary
 from src.models.tissue_edge_inference.edge_utils.error_utils import NoEdgesFoundError
+from src.models.tissue_edge_inference.edge_utils.data_utils import mask_statistics
 from src.models.tissue_edge_inference.edge_utils.img_utils import (
     overlay_image,
     rm_components_by_size,
@@ -34,10 +35,15 @@ class TissueEdgeClassifier:
         9. Extract coordinates of the edges
     """
 
-    def __init__(self, segmenter: Predicter):
+    def __init__(self, segmenter: Predicter, train_mask_dir: str):
         self._logger = StandardLogger(__name__)
         self.segmenter = segmenter
         self.edge_dict = {"apical": 1, "basal": 2}
+        self._seg_stats = mask_statistics(train_dir=train_mask_dir)
+        self._BG_5TH_PTILE = self._seg_stats["bg_5th"]
+        self._FG_5TH_PTILE = self._seg_stats["fg_5th"]
+        # self._BG_5TH_PTILE = 0.038
+        # self._FG_5TH_PTILE = 0.043
 
     def classify_img(self, img: np.ndarray) -> dict:
         """
@@ -108,13 +114,11 @@ class TissueEdgeClassifier:
         returns np.ndarray of preprocessed mask
         """
         # Remove spurious fg/bg regions based on statistics of training data
-        BG_5TH_PTILE = 0.038
-        FG_5TH_PTILE = 0.043
         preprocessed = rm_components_by_size(
-            mask=mask, size_frac=BG_5TH_PTILE, smaller=True, region="bg"
+            mask=mask, size_frac=self._BG_5TH_PTILE, smaller=True, region="bg"
         )
         preprocessed = rm_components_by_size(
-            mask=preprocessed, size_frac=FG_5TH_PTILE, smaller=True, region="fg"
+            mask=preprocessed, size_frac=self._FG_5TH_PTILE, smaller=True, region="fg"
         )
         preprocessed = preprocessed.astype(np.uint8)
 
@@ -439,7 +443,8 @@ if __name__ == "__main__":
         "src/models/dl4mia_tissue_unet/results/20220824_181000_Colab_gpu/best.pth"
     )
     unet_model = Predicter.from_ckpt(unet_ckpt)
-    TC = TissueEdgeClassifier(segmenter=unet_model)
+    TRAIN_MASK_DIR = "data/processed/uncropped/train/masks"
+    TC = TissueEdgeClassifier(segmenter=unet_model, train_mask_dir=TRAIN_MASK_DIR)
     CKPT_PATH = "models/"
     MASK_DIR = "data/processed/uncropped/val/masks"
     IMAGE_DIR = "data/processed/uncropped/val/images"

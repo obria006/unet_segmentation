@@ -1,5 +1,6 @@
 """ Fucntions for evaluating data for edge classification """
 import glob
+import time
 import numpy as np
 import tifffile
 import cv2
@@ -51,8 +52,10 @@ def mask_statistics(train_dir: str):
 
 if __name__ == "__main__":
     MASK_DIR = "data/processed/uncropped/train/masks"
+    t0 = time.time()
     stats = mask_statistics(MASK_DIR)
     print(stats)
+    print(f"Duration: {time.time() - t0}")
     """
     results on 08/26/2022 with 128x128 uncropped data:
 
