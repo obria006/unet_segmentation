@@ -7,13 +7,13 @@ class SegmentationMetrics(object):
     r"""Calculate common metrics in semantic segmentation to evalueate model preformance.
 
     Supported metrics: Pixel accuracy, Dice Coeff, precision score and recall score.
-    
+
     Pixel accuracy measures how many pixels in a image are predicted correctly.
 
     Dice Coeff is a measure function to measure similarity over 2 sets, which is usually used to
     calculate the similarity of two samples. Dice equals to f1 score in semantic segmentation tasks.
-    
-    It should be noted that Dice Coeff and Intersection over Union are highly related, so you need 
+
+    It should be noted that Dice Coeff and Intersection over Union are highly related, so you need
     NOT calculate these metrics both, the other can be calcultaed directly when knowing one of them.
 
     Precision describes the purity of our positive detections relative to the ground truth. Of all
@@ -51,7 +51,10 @@ class SegmentationMetrics(object):
         >>> metric_calculator = SegmentationMetrics(average=True, ignore_background=True)
         >>> pixel_accuracy, dice, precision, recall = metric_calculator(y_true, y_pred)
     """
-    def __init__(self, eps=1e-5, average=True, ignore_background=True, activation='0-1'):
+
+    def __init__(
+        self, eps=1e-5, average=True, ignore_background=True, activation="0-1"
+    ):
         self.eps = eps
         self.average = average
         self.ignore = ignore_background
@@ -80,8 +83,12 @@ class SegmentationMetrics(object):
             # gt shape: (N, H, W), binary array where 0 denotes negative and 1 denotes positive
             class_gt = gt_onehot[:, i, :, :]
 
-            pred_flat = class_pred.contiguous().view(-1, )  # shape: (N * H * W, )
-            gt_flat = class_gt.contiguous().view(-1, )  # shape: (N * H * W, )
+            pred_flat = class_pred.contiguous().view(
+                -1,
+            )  # shape: (N * H * W, )
+            gt_flat = class_gt.contiguous().view(
+                -1,
+            )  # shape: (N * H * W, )
 
             tp = torch.sum(gt_flat * pred_flat)
             fp = torch.sum(pred_flat) - tp
@@ -101,8 +108,12 @@ class SegmentationMetrics(object):
         # fp = np.sum(matrix[1, :])
         # fn = np.sum(matrix[2, :])
 
-        pixel_acc = (np.sum(matrix[0, :]) + self.eps) / (np.sum(matrix[0, :]) + np.sum(matrix[1, :]))
-        dice = (2 * matrix[0] + self.eps) / (2 * matrix[0] + matrix[1] + matrix[2] + self.eps)
+        pixel_acc = (np.sum(matrix[0, :]) + self.eps) / (
+            np.sum(matrix[0, :]) + np.sum(matrix[1, :])
+        )
+        dice = (2 * matrix[0] + self.eps) / (
+            2 * matrix[0] + matrix[1] + matrix[2] + self.eps
+        )
         precision = (matrix[0] + self.eps) / (matrix[0] + matrix[1] + self.eps)
         recall = (matrix[0] + self.eps) / (matrix[0] + matrix[2] + self.eps)
 
@@ -116,7 +127,7 @@ class SegmentationMetrics(object):
     def __call__(self, y_true, y_pred):
         class_num = y_pred.size(1)
 
-        if self.activation in [None, 'none']:
+        if self.activation in [None, "none"]:
             activation_fn = lambda x: x
             activated_pred = activation_fn(y_pred)
         elif self.activation == "sigmoid":
@@ -132,24 +143,31 @@ class SegmentationMetrics(object):
             raise NotImplementedError("Not a supported activation!")
 
         gt_onehot = self._one_hot(y_true, y_pred, class_num)
-        pixel_acc, dice, precision, recall = self._calculate_multi_metrics(gt_onehot, activated_pred, class_num)
+        pixel_acc, dice, precision, recall = self._calculate_multi_metrics(
+            gt_onehot, activated_pred, class_num
+        )
         return pixel_acc, dice, precision, recall
 
 
-class BinaryMetrics():
+class BinaryMetrics:
     r"""Calculate common metrics in binary cases.
-    In binary cases it should be noted that y_pred shape shall be like (N, 1, H, W), or an assertion 
+    In binary cases it should be noted that y_pred shape shall be like (N, 1, H, W), or an assertion
     error will be raised.
-    Also this calculator provides the function to calculate specificity, also known as true negative 
+    Also this calculator provides the function to calculate specificity, also known as true negative
     rate, as specificity/TPR is meaningless in multiclass cases.
     """
-    def __init__(self, eps=1e-5, activation='0-1'):
+
+    def __init__(self, eps=1e-5, activation="0-1"):
         self.eps = eps
         self.activation = activation
 
     def _calculate_overlap_metrics(self, gt, pred):
-        output = pred.view(-1, )
-        target = gt.view(-1, ).float()
+        output = pred.view(
+            -1,
+        )
+        target = gt.view(
+            -1,
+        ).float()
 
         tp = torch.sum(output * target)  # TP
         fp = torch.sum(output * (1 - target))  # FP
@@ -167,7 +185,7 @@ class BinaryMetrics():
     def __call__(self, y_true, y_pred):
         # y_true: (N, H, W)
         # y_pred: (N, 1, H, W)
-        if self.activation in [None, 'none']:
+        if self.activation in [None, "none"]:
             activation_fn = lambda x: x
             activated_pred = activation_fn(y_pred)
         elif self.activation == "sigmoid":
@@ -179,43 +197,81 @@ class BinaryMetrics():
         else:
             raise NotImplementedError("Not a supported activation!")
 
-        assert activated_pred.shape[1] == 1, 'Predictions must contain only one channel' \
-                                             ' when performing binary segmentation'
-        pixel_acc, dice, precision, specificity, recall = self._calculate_overlap_metrics(y_true.to(y_pred.device,
-                                                                                                    dtype=torch.float),
-                                                                                          activated_pred)
+        assert activated_pred.shape[1] == 1, (
+            "Predictions must contain only one channel"
+            " when performing binary segmentation"
+        )
+        (
+            pixel_acc,
+            dice,
+            precision,
+            specificity,
+            recall,
+        ) = self._calculate_overlap_metrics(
+            y_true.to(y_pred.device, dtype=torch.float), activated_pred
+        )
         return [pixel_acc, dice, precision, specificity, recall]
 
 
-def binary_sem_seg_metrics(y_true:np.ndarray, y_pred:np.ndarray, eps=1e-5):
-    """ Takes a binary ground truth ndarray and the associated binary
+def binary_sem_seg_metrics(y_true: np.ndarray, y_pred: np.ndarray, eps=1e-5):
+    """Takes a binary ground truth ndarray and the associated binary
     prediction ndarray and returns the segmentation metrics: accuracy, dice
     (same as f1 for binary semantic segmentation), precision, specificity and
     recall.
-    
+
     Arguments:
         y_true (np.ndarray): Binary ground truth.
         y_pred (np.ndarray): Binary prediction.
         eps (float): Small epsilon to avoid division by 0.
-    
+
     Returns:
         accuracy, dice, precision, specificity and recall of prediction
     """
     assert y_true.shape == y_pred.shape, "Images for metrics must be same shape"
-    assert len(np.unique(y_true)) <= 2, f"Ground truth image for binary metric must be binary. Invalid values: {np.unique(y_true)}"
-    assert len(np.unique(y_pred)) <= 2, f"Prediction image for binary metric must be binary. Invalid values: {np.unique(y_pred)}"
-    assert np.amin(y_true) >=0 and np.amax(y_true)<= 1, f"Ground truth image for binary metric must be 0-1 valued. Invalid values: {np.unique(y_true)}"
-    assert np.amin(y_pred) >=0 and np.amax(y_pred)<= 1, f"Prediction image for binary metric must be 0-1 valued. Invalid values: {np.unique(y_pred)}"
+    assert (
+        len(np.unique(y_true)) <= 2
+    ), f"Ground truth image for binary metric must be binary. Invalid values: {np.unique(y_true)}"
+    assert (
+        len(np.unique(y_pred)) <= 2
+    ), f"Prediction image for binary metric must be binary. Invalid values: {np.unique(y_pred)}"
+    assert (
+        np.amin(y_true) >= 0 and np.amax(y_true) <= 1
+    ), f"Ground truth image for binary metric must be 0-1 valued. Invalid values: {np.unique(y_true)}"
+    assert (
+        np.amin(y_pred) >= 0 and np.amax(y_pred) <= 1
+    ), f"Prediction image for binary metric must be 0-1 valued. Invalid values: {np.unique(y_pred)}"
 
     tp = np.sum(y_pred * y_true)  # TP
     fp = np.sum(y_pred * (1 - y_true))  # FP
     fn = np.sum((1 - y_pred) * y_true)  # FN
     tn = np.sum((1 - y_pred) * (1 - y_true))  # TN
 
-    pixel_acc = (tp + tn + eps) / (tp + tn + fp + fn + eps)
-    dice = (2 * tp + eps) / (2 * tp + fp + fn + eps)
+    pixel_acc, dice, precision, specificity, recall = metrics_from_confusion_nums(
+        tp=tp, fp=fp, fn=fn, tn=tn, eps=eps
+    )
+
+    return pixel_acc, dice, precision, specificity, recall
+
+
+def metrics_from_confusion_nums(tp: int, fp: int, fn: int, tn: int, eps: float = 1e-5):
+    """
+    Computes metrics from the confusion matrix numbers: true positives (tp),
+    false positives (fp), false negatives (fn), and true negatives (tn).
+
+    Args:
+        tp (int): True positives
+        fp (int): False positives
+        fn (int): False negatives
+        tn (int): True negatives
+
+    Returns:
+        accuracy, f1, precision, specificity and recall
+    """
+
+    acc = (tp + tn + eps) / (tp + tn + fp + fn + eps)
+    f1 = (2 * tp + eps) / (2 * tp + fp + fn + eps)
     precision = (tp + eps) / (tp + fp + eps)
     recall = (tp + eps) / (tp + fn + eps)
     specificity = (tn + eps) / (tn + fp + eps)
 
-    return pixel_acc, dice, precision, specificity, recall
+    return acc, f1, precision, specificity, recall
