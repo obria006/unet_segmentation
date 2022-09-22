@@ -1,7 +1,8 @@
 """ Scripts to test and evaluate the segementation model """
 import glob
+from datetime import datetime
 import os
-import numpy as np
+import git
 from tqdm import tqdm
 import pandas as pd
 import tifffile
@@ -37,6 +38,22 @@ def read_images(img_path: str, mask_path: str):
     mask = tifffile.imread(mask_path)
     img = tifffile.imread(img_path)
     return img, mask
+
+
+def save_seg_results(seg_df: pd.DataFrame, output_dir: str):
+    """Save the numerical segmentation results to a file in output_dir"""
+    # Get the git sha
+    repo = git.Repo(search_parent_directories=True)
+    sha = repo.head.object.hexsha
+
+    # Get current datetime
+    now = datetime.now()
+    date_str = now.strftime("%Y%m%d_%H%M%S")
+
+    # Filename to save
+    fname = f"{date_str}_{sha[0:7]}_test_val_metrics.csv"
+    fpath = f"{output_dir}/{fname}"
+    seg_df.to_csv(fpath)
 
 
 def main():
@@ -88,7 +105,9 @@ def main():
         tmp_df = pd.DataFrame(tmp_dict)
         seg_df = pd.concat([seg_df, tmp_df], ignore_index=True)
 
-    print(seg_df)
+    # Save the data
+    out_dir = "src/models/dl4mia_tissue_unet/results/segmentation_evaluation"
+    save_seg_results(seg_df=seg_df, output_dir=out_dir)
 
 
 if __name__ == "__main__":
