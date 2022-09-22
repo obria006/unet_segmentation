@@ -10,7 +10,7 @@ import tifffile
 import pandas as pd
 from matplotlib import pyplot as plt
 from src.utils.logging import StandardLogger
-from src.models.dl4mia_tissue_unet.predict import Predicter
+from src.models.dl4mia_tissue_unet.predict import Predicter, SegmenterWrapper
 from src.models.tissue_edge_inference.edge_utils.general import inv_dictionary
 from src.models.tissue_edge_inference.edge_utils.error_utils import NoEdgesFoundError
 from src.models.tissue_edge_inference.edge_utils.data_utils import mask_statistics
@@ -423,58 +423,6 @@ class TissueEdgeClassifier:
             semantic_edges[edge_mask] = self.edge_dict[edge_type]
 
         return semantic_edges
-
-
-class SegmenterWrapper:
-    """
-    Wraps the segmenter class to handle input and output image resizing
-    for the segmentation network when used for inference.
-    """
-
-    def __init__(self, segmenter: Predicter, in_size: tuple = (128, 128)):
-        """
-        Args:
-            segmenter: Model to perform tissue segmentation
-            in_size: size to scale image to before segmentation
-        """
-        self.segmenter = segmenter
-        self.in_size = in_size
-
-    def predict(self, img: np.ndarray, scale_out: bool = True):
-        """
-        Predict the segmentation of an input image after resizing to `in_size`
-        attribute. If `scale_out` is true, scales segmentation to match the size
-        of the `img`.
-
-        Args:
-            img: Image to segment
-            scale_out: If true, scales segmentation to match the of `img`
-
-        Returns
-            segmented image
-        """
-        # Get size of image and resize for input to model
-        img_shape = img.shape
-        if img_shape != self.in_size:
-            in_img = cv2.resize(
-                np.copy(img), dsize=self.in_size, interpolation=cv2.INTER_LINEAR
-            )
-        else:
-            in_img = np.copy(img)
-
-        # Predict segmentation
-        mask, activation = self.segmenter.predict(image=in_img)
-
-        # Re scale to input image size if desired
-        if scale_out is True and mask.shape != img_shape:
-            mask = cv2.resize(
-                mask.astype(np.uint8), dsize=img_shape, interpolation=cv2.INTER_LINEAR
-            ).astype(mask.dtype)
-            activation = cv2.resize(
-                activation, dsize=img_shape, interpolation=cv2.INTER_LINEAR
-            )
-
-        return mask, activation
 
 
 def make_plot(imgs: list):
