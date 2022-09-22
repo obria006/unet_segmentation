@@ -76,6 +76,32 @@ def plot_seg_violin(df, save: bool = True):
         save_figure(output_dir, pre_fname)
 
 
+def plot_seg_violin_bar(df, save: bool = True):
+    """Plot precision, recall, specificity, f1/dice violin plots for tissue segmentation"""
+    # Data to plot
+    x = ["Precision", "Recall", "Specificity", "F1"]
+    y = [df["prec"], df["rec"], df["spec"], df["dice"]]
+    y_mean = [df["prec"].mean(), df["rec"].mean(), df["spec"].mean(), df["dice"].mean()]
+
+    # Plot data
+    fig, ax = plt.subplots()
+    ax.bar(x, y_mean)
+    parts = ax.violinplot(y, list(range(len(y))), showextrema=False)
+    for pc in parts["bodies"]:
+        pc.set_facecolor("#696969")
+        pc.set_edgecolor("black")
+        pc.set_alpha(1.0)
+    ax.set_xlabel("Metric")
+    ax.set_ylabel("Score")
+    ax.set_ybound(0, 1)
+
+    # Save figure if desired
+    output_dir = "reports/figures"
+    pre_fname = "segmentation_metrics_violin_bar.svg"
+    if save is True:
+        save_figure(output_dir, pre_fname)
+
+
 def plot_seg_boxplot(df, save: bool = True):
     """Plot precision, recall, specificity, f1/dice boxplots for tissue segmentation"""
     # Data to plot
@@ -168,9 +194,9 @@ def main():
     data_path = "T:/Autoinjector/results/computational_results/manual_edge_classification_evaluation.csv"
     df_edge = pd.read_csv(data_path)
 
-    to_save = True
+    to_save = False
     plot_seg_means_bar(df_seg_means, save=to_save)
-    plot_seg_violin(df_seg, save=to_save)
+    plot_seg_violin_bar(df_seg, save=True)
     plot_seg_boxplot(df_seg, save=to_save)
     plot_edge_bar(df_edge, save=to_save)
     plot_edge_conf(df_edge, save=to_save)
