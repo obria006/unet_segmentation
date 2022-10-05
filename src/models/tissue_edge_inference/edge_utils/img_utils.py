@@ -196,7 +196,8 @@ def overlay_image(
     if edge_labels is not None and edge_label_dict is not None:
         for label, edge_type in edge_label_dict.items():
             edge_mask = (edge_labels == label).astype(np.uint8)
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+            ksize = [int(dim / 18) for dim in image.shape[0:2]]
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ksize)
             edge_mask = cv2.dilate(edge_mask, kernel)
             if edge_type == "apical":
                 overlay[edge_mask.astype(bool)] = APICAL_RGB
