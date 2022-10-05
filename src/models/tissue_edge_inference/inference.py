@@ -1,15 +1,17 @@
 """ Functions/classes to perform inference and label tissue edges as apical vs basal """
 
-import glob
+import os
+from datetime import datetime
 import time
-import random
 import numpy as np
+from PIL import Image
 import cv2
 from skimage.morphology import convex_hull_image
 import tifffile
 import pandas as pd
 from matplotlib import pyplot as plt
 from src.utils.logging import StandardLogger
+from src.utils.paths import list_images
 from src.models.dl4mia_tissue_unet.predict import Predicter, SegmenterWrapper
 from src.models.tissue_edge_inference.edge_utils.general import inv_dictionary
 from src.models.tissue_edge_inference.edge_utils.error_utils import NoEdgesFoundError
@@ -452,25 +454,46 @@ if __name__ == "__main__":
     unet_model = SegmenterWrapper(unet_model)
     TRAIN_MASK_DIR = "data/processed/uncropped/train/masks"
     TC = TissueEdgeClassifier(segmenter=unet_model, train_mask_dir=TRAIN_MASK_DIR)
-    MASK_DIR = "data/processed/uncropped/test/masks"
-    IMAGE_DIR = "data/processed/uncropped/test/images"
+    data_ind = input(
+        "Select data to evaluate.. (0:downsized mouse, 1:original mouse, 2:original organoid): "
+    )
+    if data_ind == "0":
+        MASK_DIR = "data/processed/uncropped/val/masks"
+        IMAGE_DIR = "data/processed/uncropped/val/images"
+    elif data_ind == "1":
+        MASK_DIR = "T:/Autoinjector/tissue_images/mouse/tissue_seg/tif/test/masks"
+        IMAGE_DIR = "T:/Autoinjector/tissue_images/mouse/tissue_seg/tif/test/images"
+    elif data_ind == "2":
+        MASK_DIR = "T:/Autoinjector/tissue_images/microinjection_trial_images/20220915"
+        IMAGE_DIR = "T:/Autoinjector/tissue_images/microinjection_trial_images/20220915"
+    else:
+        raise ValueError(f"Invalid data index: {data_ind}")
+    save_ind = float(input("Save data... (0:no, 1:yes): "))
+    if save_ind != True and save_ind != False:
+        raise ValueError(f"Invalid save index: {save_ind}")
     INAME = "E14a_000008_crop00.tif"
     INAME = "e15 20x p_000011_crop00.tif"
     INAME = "e15 c_000011_crop00.tif"
     INAME = "e15 g_000012_crop00.tif"
-    mask_paths = glob.glob(f"{MASK_DIR}/*.tif")
-    img_paths = glob.glob(f"{IMAGE_DIR}/*.tif")
+
+    mask_paths = list(list_images(f"{MASK_DIR}"))
+    img_paths = list(list_images(f"{IMAGE_DIR}"))
+    now = datetime.now()
+    now_str = now.strftime("%Y%m%d_%H%M%S")
+
     paths = zip(mask_paths, img_paths)
-    mask_path = random.choice(mask_paths)
-    # mask_path = f"{MASK_DIR}/{INAME}"
     imgs = []
     # for mask_path in mask_paths:
     for mask_path, img_path in list(paths):
-        mask_img = tifffile.imread(mask_path)
-        real_img = tifffile.imread(img_path)
+        if img_path.endswith(".tif") or img_path.endswith(".tiff"):
+            mask_img = tifffile.imread(mask_path)
+            real_img = tifffile.imread(img_path)
+        else:
+            real_img = np.asarray(Image.open(img_path))
+            mask_mg = np.asarray(Image.open(mask_path))
         t0 = time.time()
         try:
-            edge_cc, mask_cc, edge_df, new_mask = TC.classify_img(real_img)
+            edge_cc, mask_cc, edge_df, raw_seg_mask = TC.classify_img(real_img)
             edge_to_semantic = {
                 ind: edge_df.loc[ind, "semantic"] for ind in list(edge_df.index)
             }
@@ -479,10 +502,22 @@ if __name__ == "__main__":
             overlay = overlay_image(
                 image=real_img,
                 edge_label_dict=edge_to_semantic,
-                mask=new_mask,
+                mask=mask_cc > 0,
                 edge_labels=edge_cc,
             )
             imgs.append(overlay)
+            # Save overlay
+            if save_ind == True:
+                output_dir = f"src/models/tissue_edge_inference/results/classification_results/{now_str}"
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+                out_name = os.path.basename(img_path)
+                out_path = f"{output_dir}/{out_name}"
+                if out_name.endswith(".tif") or out_name.endswith(".tiff"):
+                    tifffile.imwrite(out_path, overlay)
+                else:
+                    Im = Image.fromarray(overlay)
+                    Im.save(out_path)
         except Exception as e:
             print(f"exception passed: {e}")
     make_plot(
