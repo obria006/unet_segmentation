@@ -36,6 +36,10 @@ def czi_to_tiffstack(
             f"Overwrite disabled, so not saving to {output_dir} because it already exists"
         )
         return None
+    img_czi = czi.imread(czi_path)
+    shape_dim = len(img_czi.shape)
+    if shape_dim != 5:
+        return None
     logger.info(f"Converting image: {czi_path}")
     czi.czi2tif(czi_path, out_path)
 
