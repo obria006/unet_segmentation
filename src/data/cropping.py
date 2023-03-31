@@ -67,7 +67,7 @@ def crop_and_resize_image(basename:str, input_dir:str, output_dir:str, ncrops=4,
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
         logger.info(f"Created directory: {output_dir}")
-    if keep_original is True:
+    if keep_original is True or ncrops <=1:
         rsz_img = cv2.resize(np.copy(img),dsize=size,interpolation=cv2.INTER_LINEAR)
         out_name = f"{in_name}{ext}"
         out_path = f"{output_dir}/{out_name}"
@@ -75,20 +75,21 @@ def crop_and_resize_image(basename:str, input_dir:str, output_dir:str, ncrops=4,
             logger.info(f"Overwrite disabled, so not saving {out_path} beacause it already exists")
         else:
             imageio.imwrite(out_path, rsz_img)
-    for i in range(ncrops):
-        x0 = int(i//n_inc*crop_w)
-        x1 = int(x0 + crop_w)
-        y0 = int(i%n_inc*crop_h)
-        y1 = int(y0 + crop_h)
-        img_crop = img[x0:x1, y0:y1]
-        rsz_crop = cv2.resize(img_crop,dsize=size,interpolation=cv2.INTER_LINEAR)
-        assert rsz_crop.shape == size
-        out_name = f"{in_name}_crop{str(i).zfill(2)}{ext}"
-        out_path = f"{output_dir}/{out_name}"
-        if os.path.exists(out_path) and overwrite is False:
-            logger.info(f"Overwrite disabled, so not saving {out_path} beacause it already exists")
-            break
-        imageio.imwrite(out_path, rsz_crop)
+    if ncrops >1:
+        for i in range(ncrops):
+            x0 = int(i//n_inc*crop_w)
+            x1 = int(x0 + crop_w)
+            y0 = int(i%n_inc*crop_h)
+            y1 = int(y0 + crop_h)
+            img_crop = img[x0:x1, y0:y1]
+            rsz_crop = cv2.resize(img_crop,dsize=size,interpolation=cv2.INTER_LINEAR)
+            assert rsz_crop.shape == size
+            out_name = f"{in_name}_crop{str(i).zfill(2)}{ext}"
+            out_path = f"{output_dir}/{out_name}"
+            if os.path.exists(out_path) and overwrite is False:
+                logger.info(f"Overwrite disabled, so not saving {out_path} beacause it already exists")
+                break
+            imageio.imwrite(out_path, rsz_crop)
 
 
 if __name__ == '__main__':

@@ -24,6 +24,110 @@ def list_labeled_images(data_dir:str,img_dir_name:str, mask_dir_name:str, ext='.
             file_dict[img_root] = {'num files':len(file_list), 'files':file_list, 'mask root':mask_root} 
     return file_dict
 
+def single_dir_split(data_dir:str, img_dir_name:str, mask_dir_name:str, split_vals=(70, 20, 10), seed=1000, ext='.tif'):
+    """
+    Splits all images in `data_dir` according to `split_vals`. Output to "data_dir/split".
+    
+    Args:
+        data_dir (str): Root dir containing image and mask directories
+        img_dir_name (str): Name of 'images' dir in `data_dir`
+        mask_dir_name (str): Name of 'masks' dir in `data_dir`
+        split_vals (list): Split percentages as (train, val, test)
+        seed (int): random seed
+        ext (str): image extension
+    """
+    # Validate directory paths and split percentages
+    img_dir = f"{data_dir}/{img_dir_name}"
+    mask_dir = f"{data_dir}/{mask_dir_name}"
+    if not os.path.isdir(img_dir):
+        raise FileNotFoundError(f"Image directory not found: {img_dir}")
+    if not os.path.isdir(mask_dir):
+        raise FileNotFoundError(f"Mask directory not found: {mask_dir}")
+    if sum(split_vals) != 100:
+        raise ValueError(f"Invalid split percentages: {split_vals}. Must add to 100")
+    
+    # Count number of images and masks
+    imgs = os.listdir(img_dir)
+    masks =os.listdir(mask_dir)
+    if len(imgs) == 0:
+        raise ValueError(f"No images in the image directory: {img_dir}")
+    if len(masks) == 0:
+        raise ValueError(f"No masks in the mask directory: {mask_dir}")
+    
+    # Count number of identically named images/masks
+    img_mask_pairs = []
+    for img in imgs:
+        if img in masks:
+            img_mask_pairs.append(img)
+    n_unique = len(img_mask_pairs)
+    if n_unique == 0:
+        raise ValueError("Could not find identical filenames between image dir"
+                         f"({img_dir}) and mask dir {mask_dir}.")
+    print(f"Found {n_unique} image-mask pairs from {len(imgs)} images and {len(masks)} masks")
+    
+    # Generate random index for each file corresponding to train/val/test
+    indices = np.arange(n_unique)
+    np.random.seed(seed)
+    np.random.shuffle(indices)
+    train_len = int(round(split_vals[0]/100 * n_unique))
+    val_len = int(round(split_vals[1]/100 * n_unique))
+    test_len = int(round(split_vals[2]/100 * n_unique))
+    train_inds = indices[:train_len]
+    val_inds = indices[train_len:train_len+val_len] # val draws from front of randmized images
+    test_inds = indices[-test_len:] # test draws from back of randmized images
+
+    # Create train/val/test directories
+    train_dir = f"{data_dir}/split/train"
+    val_dir = f"{data_dir}/split/val"
+    test_dir = f"{data_dir}/split/test"
+    train_exist = False
+    val_exist = False
+    test_exist = False 
+    for dirname in [img_dir_name, mask_dir_name]:
+        if not os.path.isdir(f"{train_dir}/{dirname}"):
+            os.makedirs(f"{train_dir}/{dirname}")
+        else:
+            train_exist = True
+        if not os.path.isdir(f"{val_dir}/{dirname}"):
+            os.makedirs(f"{val_dir}/{dirname}")
+        else:
+            val_exist = True
+        if not os.path.isdir(f"{test_dir}/{dirname}"):
+            os.makedirs(f"{test_dir}/{dirname}")
+        else:
+            test_exist = True
+
+    # Split data
+    if not train_exist and not val_exist and not test_exist:
+        print(f'copying data from {len(train_inds)} training instances')
+        for train_index in train_inds:
+            fname = img_mask_pairs[train_index]
+            img_src = f"{img_dir}/{fname}"
+            mask_src = f"{mask_dir}/{fname}"
+            img_dst = f"{train_dir}/{img_dir_name}/{fname}"
+            mask_dst = f"{train_dir}/{mask_dir_name}/{fname}"
+            shutil.copy(img_src, img_dst)
+            shutil.copy(mask_src, mask_dst)
+        print(f'copying data from {len(val_inds)} validation instances')
+        for val_index in val_inds:
+            fname = img_mask_pairs[val_index]
+            img_src = f"{img_dir}/{fname}"
+            mask_src = f"{mask_dir}/{fname}"
+            img_dst = f"{val_dir}/{img_dir_name}/{fname}"
+            mask_dst = f"{val_dir}/{mask_dir_name}/{fname}"
+            shutil.copy(img_src, img_dst)
+            shutil.copy(mask_src, mask_dst)
+        print(f'copying data from {len(test_inds)} testing instances')
+        for test_index in test_inds:
+            fname = img_mask_pairs[test_index]
+            img_src = f"{img_dir}/{fname}"
+            mask_src = f"{mask_dir}/{fname}"
+            img_dst = f"{test_dir}/{img_dir_name}/{fname}"
+            mask_dst = f"{test_dir}/{mask_dir_name}/{fname}"
+            shutil.copy(img_src, img_dst)
+            shutil.copy(mask_src, mask_dst)
+    else:
+        print("No data split because test/train/val already exsited.")
 
 def split_train_val_test(data_dir:str, img_dir_name:str, mask_dir_name:str, split_vals=(70, 20, 10), seed=1000, ext='.tif'):
     '''
