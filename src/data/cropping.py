@@ -67,8 +67,23 @@ def crop_and_resize_image(basename:str, input_dir:str, output_dir:str, ncrops=4,
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
         logger.info(f"Created directory: {output_dir}")
+    
+    # Determine the interpolation method for resizing
+    # Use nearest interpolation for masks so no additional labels are generated
+    is_mask = f"masks/{in_name}" in img_path.replace("\\","/")
+    if is_mask:
+        inter_flag = cv2.INTER_NEAREST
+    # Use area interpolation if downsizing image
+    elif np.mean(img.shape) > np.mean(size):
+        inter_flag = cv2.INTER_AREA
+    # Otherwise use bilinear for zooming image
+    else:
+        inter_flag = cv2.INTER_LINEAR
+    
     if keep_original is True or ncrops <=1:
-        rsz_img = cv2.resize(np.copy(img),dsize=size,interpolation=cv2.INTER_LINEAR)
+        rsz_img = cv2.resize(np.copy(img),dsize=size,interpolation=inter_flag)
+        if is_mask:
+            assert np.all(np.unique(img) == np.unique(rsz_img)), "Interpolation added segmentation labels"
         out_name = f"{in_name}{ext}"
         out_path = f"{output_dir}/{out_name}"
         if os.path.exists(out_path) and overwrite is False:
@@ -82,17 +97,21 @@ def crop_and_resize_image(basename:str, input_dir:str, output_dir:str, ncrops=4,
             y0 = int(i%n_inc*crop_h)
             y1 = int(y0 + crop_h)
             img_crop = img[x0:x1, y0:y1]
-            rsz_crop = cv2.resize(img_crop,dsize=size,interpolation=cv2.INTER_LINEAR)
+            rsz_crop = cv2.resize(img_crop,dsize=size,interpolation=inter_flag)
             assert rsz_crop.shape == size
+            if is_mask:
+                assert np.all(np.unique(img_crop) == np.unique(rsz_crop)), "Interpolation added segmentation labels"
             out_name = f"{in_name}_crop{str(i).zfill(2)}{ext}"
             out_path = f"{output_dir}/{out_name}"
             if os.path.exists(out_path) and overwrite is False:
                 logger.info(f"Overwrite disabled, so not saving {out_path} beacause it already exists")
                 break
             imageio.imwrite(out_path, rsz_crop)
+    inter_dict = {cv2.INTER_AREA:"AREA", cv2.INTER_NEAREST:"NEAREST", cv2.INTER_LINEAR:"LINEAR"}
+    logger.info(f"Used interpolation:{inter_dict[inter_flag]}")
 
 
 if __name__ == '__main__':
-    crop_and_resize_dir(input_dir="data/interim/imagej_converted/split/test",output_dir="data/interim/imagej_converted/test_output",overwrite=True,keep_original=True)
+    crop_and_resize_dir(input_dir="data/interim/OCT_scans/split/test",output_dir="data/interim/OCT_scans/demo",overwrite=True,keep_original=True, ncrops=1)
 
 
