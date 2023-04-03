@@ -12,7 +12,10 @@ from src.models.dl4mia_tissue_unet.dl4mia_utils.metrics import (
 from src.visualization.vis_utils import set_axis_style
 
 # Set appearance of plots
-plt.style.use("src/visualization/plot_style.txt")
+try:
+    plt.style.use("src/visualization/plot_style.txt")
+except:
+    print("Error while loading custom plot style. Using default style.")
 
 
 def save_figure(output_dir: str, pre_fname: str):
@@ -186,7 +189,7 @@ def plot_edge_conf(df_edge, save: bool = True):
 
 def main():
     # Read in the segmentation data
-    data_path = "src/models/dl4mia_tissue_unet/results/segmentation_evaluation/20220922_104802_cbd8e45_test_val_metrics.csv"
+    data_path = "src/models/dl4mia_tissue_unet/results/20230331_155629/evaluation/20230331_171353_3734450_test_val_metrics.csv"
     df_seg = pd.read_csv(data_path)
     df_seg_means = df_seg[["acc", "dice", "prec", "spec", "rec"]].mean()
 
