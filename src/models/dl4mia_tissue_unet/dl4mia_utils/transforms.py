@@ -15,7 +15,7 @@ class ResizeTransform:
         self.size = size
 
     def __call__(self, img:torch.Tensor, mask:torch.Tensor):
-        return (TF.resize(img, self.size), TF.resize(mask, self.size))
+        return (TF.resize(img, self.size, antialias=True), TF.resize(mask, self.size, antialias=True))
 
 class NumpyToTensor:
     """ Convert numpy image array to Tensor """
