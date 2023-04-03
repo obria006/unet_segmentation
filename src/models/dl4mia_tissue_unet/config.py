@@ -20,8 +20,8 @@ class Config:
 
     def __init__(
         self,
-        data_dir: str = "data/processed/uncropped",
-        output_dir: str = "src/models/dl4mia_tissue_unet/results",
+        data_dir: str,
+        output_dir: str,
         n_channels: int = 1,
         n_classes: int = 1,
         n_levels: int = 3,
@@ -67,7 +67,7 @@ class Config:
         # transformations for data augmentation
         self.TRANSFORMS = {
             "NumpyToTensor": {"img_dtype": "float", "mask_dtype": "short"},
-            "RandomJitter": {"brightness": 0.3, "contrast": 0.3, "p": 0.3},
+            # "RandomJitter": {"brightness": 0.3, "contrast": 0.3, "p": 0.3},
             "RandomRotationTransform": {"angles": [0, 90, 180]},
             "RandomFlip": {},
             "ResizeTransform": {"size": in_size},

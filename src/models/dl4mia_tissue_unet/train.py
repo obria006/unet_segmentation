@@ -96,7 +96,6 @@ class Trainer:
         return optimizer
 
     def begin_training(self):
-
         if self.config_dict["save"]:
             if not os.path.exists(self.config_dict["save_dir"]):
                 os.makedirs(self.config_dict["save_dir"])
@@ -218,7 +217,6 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             for i, sample in enumerate(tqdm(self.val_dataset_it)):
-
                 images = sample["image"]  # B 1 Z Y X
                 semantic_masks = sample["semantic_mask"]  # B 1 Z Y X
                 # semantic_masks.squeeze_(1)  #FIXME B Z Y X (loss expects this format) JO But it doesn't match output
@@ -250,8 +248,8 @@ class Trainer:
 
 
 def main(
-    data_dir: str = "data/processed/uncropped",
-    output_dir: str = "src/models/dl4mia_tissue_unet/results",
+    data_dir: str,
+    output_dir: str,
     n_channels: int = 1,
     n_classes: int = 1,
     n_levels: int = 3,
@@ -261,6 +259,19 @@ def main(
     batch_size: int = 8,
     save: bool = True,
 ):
+    """
+    Args:
+        data_dir (str): Directory containing "train", "val", "test" folders
+        output_dir (str): Directory where training results will be saved
+        n_channels (int): Number of channels in input image (idk if it can be other than 1)
+        n_classes (int): Number of classes for segmentation
+        n_levels (int): Number of levels in the U-Net
+        in_size (tuple): Size of images after resizing prior to input into network
+        init_lr (float): Initial learn rate
+        n_epochs (int): Number of training/validation epochs during training
+        batch_size (int): Batchsize of training images in network
+        save (bool): Whether to save training results
+    """
     cfg = Config(
         data_dir=data_dir,
         output_dir=output_dir,
@@ -296,4 +307,8 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    from src.definitions import ROOT_DIR, DATA_DIR
+
+    oct_data_dir = f"{DATA_DIR}/processed/OCT_scans_128x128"
+    results_dir = f"{ROOT_DIR}/src/models/dl4mia_tissue_unet/results"
+    main(oct_data_dir, results_dir, n_epochs=5, save=True)
