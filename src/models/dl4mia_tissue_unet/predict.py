@@ -2,8 +2,8 @@
 import os
 import time
 import random
-import glob
-import tifffile
+import imageio
+import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -12,10 +12,10 @@ import torch.nn.functional as F
 from src.models.dl4mia_tissue_unet.dl4mia_utils.img_utils import preprocess_image
 from src.models.dl4mia_tissue_unet.dl4mia_utils.general import load_yaml
 from src.models.dl4mia_tissue_unet.model import UNet
+from src.utils.paths import list_images
 
 
 class Predicter:
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     @classmethod
@@ -128,7 +128,7 @@ class SegmenterWrapper:
         # Re scale to input image size if desired
         if scale_out is True and mask.shape != img_shape:
             mask = cv2.resize(
-                mask.astype(np.uint8), dsize=img_shape, interpolation=cv2.INTER_LINEAR
+                mask.astype(np.uint8), dsize=img_shape, interpolation=cv2.INTER_NEAREST
             ).astype(mask.dtype)
             activation = cv2.resize(
                 activation, dsize=img_shape, interpolation=cv2.INTER_LINEAR
@@ -137,15 +137,31 @@ class SegmenterWrapper:
         return mask, activation
 
 
-def prepare_plot(origImage, origMask, actMask, predMask, title=None):
+def prepare_plot(
+    img: np.ndarray,
+    gt_mask: np.ndarray,
+    act_mask: np.ndarray,
+    pred_mask: np.ndarray,
+    title=None,
+):
+    """
+    Construct image showing og image, gt mask, activations, and the predicted mask.
+
+    Args:
+        img (np.ndarray): Orginal image used for prediction
+        gt_mask (np.ndarray): ground truth mask
+        act_mask (np.ndarray): activation mask from prediction
+        pred_mask (np.ndarray): prediction mask
+        title (str): title of image
+    """
     # initialize our figure
     figure, ax = plt.subplots(nrows=2, ncols=2, figsize=(7, 7), dpi=100)
 
     # plot the original image, its mask, and the predicted mask
-    ax[0, 0].imshow(origImage, cmap="gray")
-    ax[0, 1].imshow(origMask)
-    pos = ax[1, 0].imshow(actMask)
-    ax[1, 1].imshow(predMask)
+    ax[0, 0].imshow(img, cmap="gray")
+    ax[0, 1].imshow(gt_mask)
+    pos = ax[1, 0].imshow(act_mask)
+    ax[1, 1].imshow(pred_mask)
 
     # set the titles of the subplots
     ax[0, 0].set_title("Image")
@@ -161,55 +177,118 @@ def prepare_plot(origImage, origMask, actMask, predMask, title=None):
     figure.show()
 
 
-def make_predictions(predicter, imagePath, maskPath):
-    # find the filename and generate the path to ground truth
-    # mask
-    filename = imagePath.split(os.path.sep)[-1]
+def make_predictions(
+    predicter: Predicter, img_path: str, mask_path: str, save_dir: str = None
+):
+    """
+    Construct image showing og image, gt mask, activations, and the predicted mask.
+    Image can be saved to file.
+
+    Args:
+        predicter (Predicter): Segemntation predictor interface
+        img_path (str): Path to orginal image
+        mask_path (str): Path to ground truth mask
+        save_dir (str): Path to directory where to save images
+    """
+    # find the filename and generate the path to ground truth mask
+    filename = img_path.split(os.path.sep)[-1]
+    basename = os.path.splitext(filename)[0]
 
     # load the ground-truth segmentation mask in grayscale mode
     # and resize it
-    gtMask = cv2.imread(maskPath, 0)
+    gt_mask = imageio.v2.imread(mask_path)
 
     # MATCH HOW THE DATASET "READS IN" FILES
-    image = tifffile.imread(imagePath)
+    image = imageio.v2.imread(img_path)
     orig = image.copy()
     t0 = time.time()
-    predMask, actMask = predicter.predict(image, gt=gtMask)
+    pred_mask, act_mask = predicter.predict(image, gt=gt_mask)
     print(f"Predict time: {time.time() - t0}")
-    predMask = (predMask * 255).astype(np.uint8)
+    pred_mask = (pred_mask * 255).astype(np.uint8)
 
     # prepare a plot for visualization
-    prepare_plot(orig, gtMask, actMask, predMask, title=filename)
+    prepare_plot(orig, gt_mask, act_mask, pred_mask, title=filename)
+    if save_dir:
+        fname = f"{save_dir}/{basename}_prediction.png"
+        plt.savefig(fname)
 
 
 def main(
-    src_dir: str = "src/models/dl4mia_tissue_unet/results/20220824_163348",
+    src_dir: str,
     ckpt_name: str = "best.pth",
+    deploy_dir: str = None,
+    max_deploy: int = 100,
 ):
+    """
+    Args:
+        src_dir (str): Directory containing the training results (namely the .pth checkpoints)
+        ckpt_name (str): Checkpoint name to load like "best.pth"
+        deploy_dir (str): If not None, conducts predictions on images in deploy_dir
+        max_deploy
+    """
+    # Compile image and mask paths in test dataset
     print("[INFO] loading up test image paths...")
     test_dict_path = f"{src_dir}/test_dataset_dict.yaml"
     test_dataset_dict = load_yaml(test_dict_path)
     data_dir = test_dataset_dict["kwargs"]["data_dir"]
+    if not os.path.isdir(data_dir):
+        data_dir = data_dir.replace("../", "")
+        if not os.path.isdir(data_dir):
+            raise ValueError(f"No directory at: {data_dir}")
     data_type = test_dataset_dict["kwargs"]["data_type"]
-    imagePaths = glob.glob(f"{data_dir}/{data_type}/images/*.tif")
-    maskPaths = glob.glob(f"{data_dir}/{data_type}/masks/*.tif")
+    img_paths = list(list_images(f"{data_dir}/{data_type}/images"))
+    mask_paths = list(list_images(f"{data_dir}/{data_type}/masks"))
 
-    imagePaths, maskPaths = zip(*random.sample(list(zip(imagePaths, maskPaths)), 5))
+    # Randomly select image/masks to predict
+    n_predict = min(5, len(img_paths))
+    img_paths, mask_paths = zip(
+        *random.sample(list(zip(img_paths, mask_paths)), n_predict)
+    )
 
-    print("[INFO] loading up model...")
+    # Load the model
+    print("Loading model...")
     ckpt_path = f"{src_dir}/{ckpt_name}"
     t0 = time.time()
-    P = Predicter.from_ckpt(ckpt_path=ckpt_path)
+    predicter = Predicter.from_ckpt(ckpt_path=ckpt_path)
     print(f"Load time: {time.time() - t0}")
 
-    # iterate over the randomly selected test image paths
-    for ind in range(len(imagePaths)):
-        imagePath = imagePaths[ind]
-        maskPath = maskPaths[ind]
+    # iterate over the randomly selected test image path
+    save_dir = f"{src_dir}/predictions"
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+        print(f"Created prediction directory: {save_dir}")
+    for img_path, mask_path in list(zip(img_paths, mask_paths)):
         # make predictions and visualize the results
-        make_predictions(P, imagePath, maskPath)
+        make_predictions(predicter, img_path, mask_path, save_dir=save_dir)
     plt.show()
+
+    if deploy_dir:
+        deploy_imgs = list(list_images(deploy_dir))
+        if len(deploy_imgs) > max_deploy:
+            deploy_imgs = deploy_imgs[:max_deploy]
+        segmenter = SegmenterWrapper(predicter)
+        print(f"Deploying model on {len(deploy_imgs)} images in {deploy_dir}")
+        for ind in tqdm(range(len(deploy_imgs))):
+            img_path = deploy_imgs[ind]
+            img_name = img_path.split(os.path.sep)[-1]
+            img = imageio.v2.imread(img_path)
+            pred, act = segmenter.predict(img)
+            if not os.path.isdir(save_dir):
+                os.makedirs(save_dir)
+            save_deploy_dir = f"{save_dir}/deployment"
+            save_path = f"{save_deploy_dir}/{img_name}"
+            pred = pred.astype(np.uint8) * 255
+            imageio.v2.imwrite(save_path, pred)
 
 
 if __name__ == "__main__":
-    main()
+    src_dir = "src/models/dl4mia_tissue_unet/results/20230403_102456"
+    ckpt_name = "best.pth"
+    deploy_dir = "data/raw/OCT_scans/images"
+    max_deploy = 100
+    main(
+        src_dir=src_dir,
+        ckpt_name=ckpt_name,
+        # deploy_dir=deploy_dir,
+        max_deploy=max_deploy,
+    )
