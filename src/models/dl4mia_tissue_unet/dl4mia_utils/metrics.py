@@ -4,7 +4,9 @@ import torch.nn as nn
 
 
 class SegmentationMetrics(object):
-    r"""Calculate common metrics in semantic segmentation to evalueate model preformance.
+    r"""(from: https://github.com/hsiangyuzhao/Segmentation-Metrics-PyTorch/blob/master/metric.py)
+    
+    Calculate common metrics in semantic segmentation to evalueate model preformance.
 
     Supported metrics: Pixel accuracy, Dice Coeff, precision score and recall score.
 
@@ -125,6 +127,12 @@ class SegmentationMetrics(object):
         return pixel_acc, dice, precision, recall
 
     def __call__(self, y_true, y_pred):
+        if len(y_true.shape) == 4:
+            assert y_true.shape == y_pred.shape, f"'true' shape {y_true.shape} mismatch 'pred' shape {y_pred.shape}"
+            assert y_true.shape[1] == 1, f"Invalid 'true' shape {y_true.shape}. Must be (B, 1, H, W)"
+            y_true = torch.clone(y_true).detach()[:,0,:,:]
+        assert len(y_true.shape) == 3, f"Invalid 'true' shape: {y_true.shape}. Must be (B, H, W)"
+        assert len(y_pred.shape) == 4, f"Invalid 'pred' shape: {y_pred.shape}. Must be (B, C, H, W)"
         class_num = y_pred.size(1)
 
         if self.activation in [None, "none"]:
@@ -183,6 +191,13 @@ class BinaryMetrics:
         return pixel_acc, dice, precision, specificity, recall
 
     def __call__(self, y_true, y_pred):
+        if len(y_true.shape) == 4:
+            assert y_true.shape == y_pred.shape, f"'true' shape {y_true.shape} mismatch 'pred' shape {y_pred.shape}"
+            assert y_true.shape[1] == 1, f"Invalid 'true' shape {y_true.shape} for binary. Must be (B, 1, H, W)"
+            y_true = torch.clone(y_true).detach()[:,0,:,:]
+        assert len(y_true.shape) == 3, f"Invalid 'true' shape: {y_true.shape}. Must be (B, H, W)"
+        assert len(y_pred.shape) == 4, f"Invalid 'pred' shape: {y_pred.shape}. Must be (B, 1, H, W)"
+        assert y_pred.shape[1] == 1, f"Invalid 'pred' shape: {y_pred.shape}. Must be (B, 1, H, W)"
         # y_true: (N, H, W)
         # y_pred: (N, 1, H, W)
         if self.activation in [None, "none"]:

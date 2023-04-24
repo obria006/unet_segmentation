@@ -25,6 +25,7 @@ class Config:
         n_channels: int = 1,
         n_classes: int = 1,
         n_levels: int = 3,
+        batch_norm: bool = True,
         in_size: tuple = (128, 128),
         init_lr: float = 5e-4,
         n_epochs: int = 15,
@@ -38,6 +39,7 @@ class Config:
             n_channels: number of channels in the input image
             n_classes: number of classes for segmentation
             n_levels: number of max pooling levels in unet
+            batch_norm (bool): True to include batchnorm layers in UNet
             in_size: size of the input image to model (image will be resized to match)
             init_lr: initial learning rate
             n_epochs: number of epochs to train
@@ -57,6 +59,7 @@ class Config:
         self.NUM_CHANNELS = n_channels
         self.NUM_CLASSES = n_classes
         self.NUM_LEVELS = n_levels
+        self.BATCH_NORM = batch_norm
 
         # initialize learning rate, number of epochs to train for, and the
         # batch size
@@ -132,6 +135,7 @@ class Config:
                 "num_classes": self.NUM_CLASSES,
                 "depth": self.NUM_LEVELS,
                 "in_channels": self.NUM_CHANNELS,
+                "batch_norm": self.BATCH_NORM,
             },
         }
 

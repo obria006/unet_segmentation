@@ -6,12 +6,13 @@ from src.models.dl4mia_tissue_unet.config import Config
 from src.models.dl4mia_tissue_unet.dataset import TwoDimensionalDataset
 from src.models.dl4mia_tissue_unet.model_v2 import UNet
 from src.models.dl4mia_tissue_unet.dl4mia_utils.general import print_dict, save_yaml
-from src.models.dl4mia_tissue_unet.dl4mia_utils.metrics import binary_sem_seg_metrics
+from src.models.dl4mia_tissue_unet.dl4mia_utils.metrics import binary_sem_seg_metrics, BinaryMetrics, SegmentationMetrics
 from src.models.dl4mia_tissue_unet.dl4mia_utils.train_utils import (
     save_checkpoint,
     AverageMeter,
     Logger,
 )
+import src.models.dl4mia_tissue_unet.dl4mia_utils.loss as loss_utils
 
 torch.backends.cudnn.benchmark = True
 
@@ -50,7 +51,7 @@ class Trainer:
 
         print("\ncreating model...")
         self.model = self._create_model(model_dict)
-        self.criterion = self._create_BCE_criterion()
+        self.criterion = self._create_tversky_criterion()
         self.optimizer = self._set_optimizer(weight_decay=1e-4)
 
     def _create_data_loader(self, dataset_dict, shuffle=True, drop_last=True):
@@ -86,6 +87,17 @@ class Trainer:
         criterion = torch.nn.DataParallel(criterion)
         criterion.to(self.device)
         return criterion
+    
+    def _create_tversky_criterion(self):
+        if self.model_dict["kwargs"]["num_classes"] > 1:
+            mode = "multiclass"
+        else:
+            mode = "binary"
+        criterion = loss_utils.TverskyLoss(mode=mode, from_logits=True)
+        criterion = torch.nn.DataParallel(criterion)
+        criterion.to(self.device)
+        return criterion
+
 
     def _set_optimizer(self, weight_decay: float = 1e-4):
         optimizer = torch.optim.Adam(
@@ -129,11 +141,12 @@ class Trainer:
         )
 
         # Logger
-        logger = Logger(("train", "val", "ap"), "loss")
+        logger = Logger(("train", "val", "ap", "dice"), "loss")
 
         # resume
         start_epoch = 0
-        best_ap = 0
+        best_dice = 0
+        best_loss = 0
         if self.config_dict["resume_path"] is not None and os.path.exists(
             self.config_dict["resume_path"]
         ):
@@ -143,7 +156,8 @@ class Trainer:
             )
             state = torch.load(self.config_dict["resume_path"])
             start_epoch = state["epoch"] + 1
-            best_ap = state["best_ap"]
+            best_dice = state["best_dice"]
+            best_loss = state["best_loss"]
             self.model.load_state_dict(state["model_state_dict"], strict=True)
             self.optimizer.load_state_dict(state["optim_state_dict"])
             logger.data = state["logger_data"]
@@ -151,31 +165,33 @@ class Trainer:
         for epoch in range(start_epoch, start_epoch + self.config_dict["n_epochs"]):
             print("Starting epoch {}".format(epoch), flush=True)
             train_loss = self.train()
-            val_loss, val_ap = self.val()
-
+            val_loss, val_ap, val_dice = self.val()
             scheduler.step()
-            print("===> train loss: {:.2f}".format(train_loss), flush=True)
-            print(
-                "===> val loss: {:.2f}, val ap: {:.2f}".format(val_loss, val_ap),
-                flush=True,
-            )
+            print("===> train loss:\t{:.2f}".format(train_loss), flush=True)
+            print("===> val loss:\t\t{:.2f}".format(val_loss), flush=True)
+            print("===> val ap:\t\t{:.2f}".format(val_ap), flush=True)
+            print("===> val dice:\t\t{:.2f}".format(val_dice), flush=True)
 
             logger.add("train", train_loss)
             logger.add("val", val_loss)
             logger.add("ap", val_ap)
+            logger.add('dice', val_dice)
             logger.plot(
                 save=self.config_dict["save"], save_dir=self.config_dict["save_dir"]
             )
 
-            is_best = val_ap > best_ap
-            best_ap = max(val_ap, best_ap)
+            is_best = val_ap > best_dice
+            best_dice = max(val_dice, best_dice)
+            best_loss = min(val_loss, best_loss)
 
             if self.config_dict["save"]:
                 trainable_state = {
                     "epoch": epoch,
                     "val_loss": val_loss,
                     "val_ap": val_ap,
-                    "best_ap": best_ap,
+                    "val_dice": val_dice,
+                    "best_loss": best_loss,
+                    "best_dice": best_dice,
                     "train_cuda": self.config_dict["cuda"],
                     "model_dict": self.model_dict,
                     "model_state_dict": self.model.module.state_dict(),  # remove .module if not using nn.DataParallel model
@@ -203,7 +219,6 @@ class Trainer:
             loss = self.criterion(
                 output, semantic_masks.float()
             )  # B 1 Z Y X JO only for  BCEWithLogitsLoss
-            loss = loss.mean()
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -214,6 +229,7 @@ class Trainer:
     def val(self):
         loss_meter = AverageMeter()
         average_precision_meter = AverageMeter()
+        average_dice_meter = AverageMeter()
         self.model.eval()
         with torch.no_grad():
             for i, sample in enumerate(tqdm(self.val_dataset_it)):
@@ -225,26 +241,38 @@ class Trainer:
                 loss = self.criterion(
                     output, semantic_masks.float()
                 )  # B 1 Z Y X JO only for  BCEWithLogitsLoss
-                loss = loss.mean()
                 loss_meter.update(loss.item())
-                # bin_metric = BinaryMetrics(activation='0-1') # Does a sigmoid and threshold activation
-                # acc, dice, prec, spec, rec = bin_metric(semantic_masks[:, 0, ...], output)
-                # average_precision_meter.update(dice)
-                for b in range(output.shape[0]):
-                    output_softmax = torch.sigmoid(output[b])
-                    prediction_fg = output_softmax[0, ...].cpu().detach().numpy()
-                    pred_fg_thresholded = (prediction_fg > 0.5).astype(int)
-                    acc, dice, prec, spec, rec = binary_sem_seg_metrics(
-                        y_true=semantic_masks[b, 0, ...].cpu().detach().numpy(),
-                        y_pred=pred_fg_thresholded,
-                    )
-                    # sc = matching_dataset(y_pred=[pred_fg_thresholded], y_true=[semantic_masks[b, 0, ...].cpu().detach().numpy()])
-                    # instance_map, _ = ndimage.label(pred_fg_thresholded)
-                    #     # sc = matching_dataset(y_pred=[instance_map], y_true=[instance[b, 0, ...].cpu().detach().numpy()],
-                    #     #                     thresh=0.5, show_progress=False)
-                    average_precision_meter.update(dice)
 
-        return loss_meter.avg, average_precision_meter.avg
+                # Compute segmentation metrics
+                if self.model_dict["kwargs"]["num_classes"] == 1:
+                    # "0-1" activation applys sigmoid and thresholds above 0.5
+                    # aka "0-1" performs activation: (torch.sigmoid(output) > 0.5).float()
+                    val_metrics = BinaryMetrics(activation="0-1")
+                    acc, dice, prec, spec, rec = val_metrics(semantic_masks.cpu().detach(), output.cpu().detach())
+                else:
+                    val_metrics = SegmentationMetrics(activation=None)
+                    raise NotImplementedError("No activation defined for multiclass problem")
+                average_precision_meter.update(prec.item())
+                average_dice_meter.update(dice.item())
+
+                # # bin_metric = BinaryMetrics(activation='0-1') # Does a sigmoid and threshold activation
+                # # acc, dice, prec, spec, rec = bin_metric(semantic_masks[:, 0, ...], output)
+                # # average_precision_meter.update(dice)
+                # for b in range(output.shape[0]):
+                #     output_softmax = torch.sigmoid(output[b])
+                #     prediction_fg = output_softmax[0, ...].cpu().detach().numpy()
+                #     pred_fg_thresholded = (prediction_fg > 0.5).astype(int)
+                #     acc, dice, prec, spec, rec = binary_sem_seg_metrics(
+                #         y_true=semantic_masks[b, 0, ...].cpu().detach().numpy(),
+                #         y_pred=pred_fg_thresholded,
+                #     )
+                #     # sc = matching_dataset(y_pred=[pred_fg_thresholded], y_true=[semantic_masks[b, 0, ...].cpu().detach().numpy()])
+                #     # instance_map, _ = ndimage.label(pred_fg_thresholded)
+                #     #     # sc = matching_dataset(y_pred=[instance_map], y_true=[instance[b, 0, ...].cpu().detach().numpy()],
+                #     #     #                     thresh=0.5, show_progress=False)
+                #     average_precision_meter.update(dice)
+
+        return loss_meter.avg, average_precision_meter.avg, average_dice_meter.avg
 
 
 def main(
@@ -254,7 +282,7 @@ def main(
     n_classes: int = 1,
     n_levels: int = 3,
     in_size: tuple = (128, 128),
-    init_lr: float = 5e-4,
+    init_lr: float = 1e-3,
     n_epochs: int = 15,
     batch_size: int = 8,
     save: bool = True,
