@@ -4,7 +4,7 @@ import torch.nn as nn
 from tqdm import tqdm
 from src.models.dl4mia_tissue_unet.config import Config
 from src.models.dl4mia_tissue_unet.dataset import TwoDimensionalDataset
-from src.models.dl4mia_tissue_unet.model import UNet
+from src.models.dl4mia_tissue_unet.model_v2 import UNet
 from src.models.dl4mia_tissue_unet.dl4mia_utils.general import print_dict, save_yaml
 from src.models.dl4mia_tissue_unet.dl4mia_utils.metrics import binary_sem_seg_metrics
 from src.models.dl4mia_tissue_unet.dl4mia_utils.train_utils import (
@@ -311,4 +311,4 @@ if __name__ == "__main__":
 
     oct_data_dir = f"{DATA_DIR}/processed/OCT_scans_128x128"
     results_dir = f"{ROOT_DIR}/src/models/dl4mia_tissue_unet/results"
-    main(oct_data_dir, results_dir, n_epochs=5, save=True)
+    main(oct_data_dir, results_dir, n_epochs=5, save=False)

@@ -11,7 +11,7 @@ import cv2
 import torch.nn.functional as F
 from src.models.dl4mia_tissue_unet.dl4mia_utils.img_utils import preprocess_image
 from src.models.dl4mia_tissue_unet.dl4mia_utils.general import load_yaml
-from src.models.dl4mia_tissue_unet.model import UNet
+from src.models.dl4mia_tissue_unet import (model as v1, model_v2 as v2)
 from src.utils.paths import list_images
 
 
@@ -33,7 +33,7 @@ class Predicter:
         for key in checkpoint:
             if "state_dict" not in key and "logger_data" not in key:
                 print(f"\t{key} = {checkpoint[key]}")
-        model = UNet(**model_dict["kwargs"])
+        model = v2.UNet(**model_dict["kwargs"])
         model.load_state_dict(state_dict, strict=True)
         model.to(cls.device)
         return cls(model)
@@ -63,11 +63,19 @@ class Predicter:
                 diff_y - diff_y // 2,
             )  # last dim, second last dim
 
-            im = F.pad(torch.from_numpy(im), p2d, "reflect").to(self.device)
+            # Process and predict differently for differeent models
+            if isinstance(self.model, v2.UNet):
+                im = np.array(im)
+                im = im[np.newaxis,:]
+                im = torch.from_numpy(im).to(self.device)
+                output = self.model(im)  # B 3 Y X
+                output_softmax = torch.sigmoid(output[0,0,:])
+            elif isinstance(self.model, v1.UNet):
+                im = F.pad(torch.from_numpy(im), p2d, "reflect").to(self.device)
+                output = self.model(im)  # B 3 Y X
+                output_softmax = torch.sigmoid(output[0])
 
-            output = self.model(im)  # B 3 Y X
-            # output_softmax = F.softmax(output[0], dim=0)
-            output_softmax = torch.sigmoid(output[0])
+            # Threshold prediction to genrate binary labeled map
             seed_map = output_softmax.cpu().detach().numpy()  # Y X
             pred_fg_thresholded = seed_map > 0.5
 
@@ -283,6 +291,7 @@ def main(
 
 if __name__ == "__main__":
     src_dir = "src/models/dl4mia_tissue_unet/results/20230403_102456"
+    src_dir = "src/models/dl4mia_tissue_unet/results/20230421_171049"
     ckpt_name = "best.pth"
     deploy_dir = "data/raw/OCT_scans/images"
     max_deploy = 100
