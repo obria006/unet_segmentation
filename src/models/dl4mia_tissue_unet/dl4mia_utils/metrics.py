@@ -109,9 +109,8 @@ class SegmentationMetrics(object):
         # tp = np.sum(matrix[0, :])
         # fp = np.sum(matrix[1, :])
         # fn = np.sum(matrix[2, :])
-
         pixel_acc = (np.sum(matrix[0, :]) + self.eps) / (
-            np.sum(matrix[0, :]) + np.sum(matrix[1, :])
+            np.sum(matrix[0, :]) + np.sum(matrix[1, :]) + self.eps
         )
         dice = (2 * matrix[0] + self.eps) / (
             2 * matrix[0] + matrix[1] + matrix[2] + self.eps
@@ -128,7 +127,8 @@ class SegmentationMetrics(object):
 
     def __call__(self, y_true, y_pred):
         if len(y_true.shape) == 4:
-            assert y_true.shape == y_pred.shape, f"'true' shape {y_true.shape} mismatch 'pred' shape {y_pred.shape}"
+            assert y_true.shape[0] == y_pred.shape[0], f"'true' batch {y_true.shape} mismatch 'pred' batch {y_pred.shape}"
+            assert y_true.shape[-2:] == y_pred.shape[-2:], f"'true' H, W {y_true.shape} mismatch 'pred' H, W {y_pred.shape}"
             assert y_true.shape[1] == 1, f"Invalid 'true' shape {y_true.shape}. Must be (B, 1, H, W)"
             y_true = torch.clone(y_true).detach()[:,0,:,:]
         assert len(y_true.shape) == 3, f"Invalid 'true' shape: {y_true.shape}. Must be (B, H, W)"

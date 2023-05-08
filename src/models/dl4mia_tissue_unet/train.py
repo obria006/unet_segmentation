@@ -257,10 +257,10 @@ class Trainer:
                     # "0-1" activation applys sigmoid and thresholds above 0.5
                     # aka "0-1" performs activation: (torch.sigmoid(output) > 0.5).float()
                     val_metrics = BinaryMetrics(activation="0-1")
-                    acc, dice, prec, spec, rec = val_metrics(semantic_masks.cpu().detach(), output.cpu().detach())
+                    acc, dice, prec, spec, rec = val_metrics(semantic_masks.detach(), output.detach())
                 else:
-                    val_metrics = SegmentationMetrics(activation=None)
-                    raise NotImplementedError("No activation defined for multiclass problem")
+                    val_metrics = SegmentationMetrics(activation="0-1")
+                    acc, dice, prec, spec = val_metrics(semantic_masks.detach(), output.detach())
                 average_precision_meter.update(prec.item())
                 average_dice_meter.update(dice.item())
 
@@ -347,5 +347,6 @@ if __name__ == "__main__":
     from src.definitions import ROOT_DIR, DATA_DIR
 
     oct_data_dir = f"{DATA_DIR}/processed/OCT_scans_128x128"
+    oct_data_dir = f"{DATA_DIR}/processed/OCT_scans_new_20230419_skull_512x512"
     results_dir = f"{ROOT_DIR}/src/models/dl4mia_tissue_unet/results"
-    main(oct_data_dir, results_dir, n_epochs=5, save=False)
+    main(oct_data_dir, results_dir, n_classes=1, n_epochs=10, save=False)
