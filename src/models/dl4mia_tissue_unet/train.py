@@ -69,7 +69,7 @@ class Trainer:
     def _create_model(self, model_dict):
         # set model
         model = UNet(**model_dict["kwargs"])
-        model = torch.nn.DataParallel(model)
+        # model = torch.nn.DataParallel(model)
         model.to(self.device)
         return model
 
@@ -78,13 +78,13 @@ class Trainer:
             criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight).cuda())
         else:
             criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight))
-        criterion = torch.nn.DataParallel(criterion)
+        # criterion = torch.nn.DataParallel(criterion)
         criterion.to(self.device)
         return criterion
 
     def _create_BCE_criterion(self):
         criterion = nn.BCEWithLogitsLoss()
-        criterion = torch.nn.DataParallel(criterion)
+        # criterion = torch.nn.DataParallel(criterion)
         criterion.to(self.device)
         return criterion
     
@@ -94,7 +94,7 @@ class Trainer:
         else:
             mode = "binary"
         criterion = loss_utils.TverskyLoss(mode=mode, from_logits=True)
-        criterion = torch.nn.DataParallel(criterion)
+        # criterion = torch.nn.DataParallel(criterion)
         criterion.to(self.device)
         return criterion
 
@@ -185,6 +185,11 @@ class Trainer:
             best_loss = min(val_loss, best_loss)
 
             if self.config_dict["save"]:
+                if isinstance(self.model, torch.nn.DataParallel):
+                    # remove .module if not using nn.DataParallel model
+                    model_state_dict = self.model.module.state_dict()
+                else:
+                    model_state_dict = self.model.state_dict()
                 trainable_state = {
                     "epoch": epoch,
                     "val_loss": val_loss,
@@ -194,7 +199,7 @@ class Trainer:
                     "best_dice": best_dice,
                     "train_cuda": self.config_dict["cuda"],
                     "model_dict": self.model_dict,
-                    "model_state_dict": self.model.module.state_dict(),  # remove .module if not using nn.DataParallel model
+                    "model_state_dict": model_state_dict,
                     "optim_state_dict": self.optimizer.state_dict(),
                     "logger_data": logger.data,
                 }
@@ -211,14 +216,16 @@ class Trainer:
         for param_group in self.optimizer.param_groups:
             print("learning rate: {}".format(param_group["lr"]), flush=True)
         for i, sample in enumerate(tqdm(self.train_dataset_it)):
-            images = sample["image"]  # B 1 Z Y X
-            semantic_masks = sample["semantic_mask"]  # B 1 Z Y X
+            images = sample["image"].to(self.device)  # B C Y X
+            semantic_masks = sample["semantic_mask"].to(self.device)  # B C Y X
             # semantic_masks.squeeze_(1)  #FIXME B Z Y X (loss expects this format) JO But it doesn't match output
-            output = self.model(images)  # B 3 Z Y X
-            # loss = self.criterion(output, semantic_masks.long())  # B 1 Z Y X
-            loss = self.criterion(
-                output, semantic_masks.float()
-            )  # B 1 Z Y X JO only for  BCEWithLogitsLoss
+            output = self.model(images)  # B C Y X
+            if isinstance(self.criterion, loss_utils.TverskyLoss):
+                loss = self.criterion(output, semantic_masks.long())  # B C Y X
+            elif isinstance(self.criterion, nn.BCEWithLogitsLoss):
+                loss = self.criterion(
+                    output, semantic_masks.float()
+                )  # B C Y X
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -233,14 +240,16 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             for i, sample in enumerate(tqdm(self.val_dataset_it)):
-                images = sample["image"]  # B 1 Z Y X
-                semantic_masks = sample["semantic_mask"]  # B 1 Z Y X
+                images = sample["image"].to(self.device)  # B C Y X
+                semantic_masks = sample["semantic_mask"].to(self.device)  # B C Y X
                 # semantic_masks.squeeze_(1)  #FIXME B Z Y X (loss expects this format) JO But it doesn't match output
-                output = self.model(images)  # B 3 Z Y X
-                # loss = self.criterion(output, semantic_masks.long())  # B 1 Z Y X
-                loss = self.criterion(
-                    output, semantic_masks.float()
-                )  # B 1 Z Y X JO only for  BCEWithLogitsLoss
+                output = self.model(images)  # B C Y X
+                if isinstance(self.criterion, loss_utils.TverskyLoss):
+                    loss = self.criterion(output, semantic_masks.long())  # B C Y X
+                elif isinstance(self.criterion, nn.BCEWithLogitsLoss):
+                    loss = self.criterion(
+                        output, semantic_masks.float()
+                    )  # B C Y X
                 loss_meter.update(loss.item())
 
                 # Compute segmentation metrics
