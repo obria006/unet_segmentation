@@ -73,7 +73,7 @@ class Config:
             # "RandomJitter": {"brightness": 0.3, "contrast": 0.3, "p": 0.3},
             "RandomRotationTransform": {"angles": [0, 90, 180]},
             "RandomFlip": {},
-            "ResizeTransform": {"size": in_size},
+            # "ResizeTransform": {"size": in_size},
         }
         val_transforms = {}
         if "NumpyToTensor" in self.TRANSFORMS:

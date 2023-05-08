@@ -176,6 +176,7 @@ class BinaryMetrics:
         target = gt.view(
             -1,
         ).float()
+        assert len(torch.unique(target)) <= 2, "GT must be binary"
 
         tp = torch.sum(output * target)  # TP
         fp = torch.sum(output * (1 - target))  # FP

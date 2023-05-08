@@ -290,7 +290,7 @@ def main(
     n_channels: int = 1,
     n_classes: int = 1,
     n_levels: int = 3,
-    in_size: tuple = (128, 128),
+    in_size: tuple = None,
     init_lr: float = 1e-3,
     n_epochs: int = 15,
     batch_size: int = 8,
