@@ -28,5 +28,6 @@ setup(
         "opencv-python",
         "scikit-learn",
         "gitpython",
+        "onnx",
     ],
 )
