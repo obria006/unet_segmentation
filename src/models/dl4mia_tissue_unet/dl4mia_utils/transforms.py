@@ -1,5 +1,6 @@
 import sys
 import torch
+from torchvision.transforms import InterpolationMode as i_mode
 import torchvision.transforms.functional as TF
 import numpy as np
 import random
@@ -15,7 +16,9 @@ class ResizeTransform:
         self.size = size
 
     def __call__(self, img:torch.Tensor, mask:torch.Tensor):
-        return (TF.resize(img, self.size, antialias=True), TF.resize(mask, self.size, antialias=True))
+        assert isinstance(img, torch.Tensor), f"Invalid image type: {type(img)}. Must be Tensor for ResizeTransform"
+        assert isinstance(mask, torch.Tensor), f"Invalid mask type: {type(mask)}. Must be Tensor for ResizeTransform"
+        return (TF.resize(img, self.size, antialias=True), TF.resize(mask, self.size, antialias=False, interpolation=i_mode.NEAREST))
 
 class NumpyToTensor:
     """ Convert numpy image array to Tensor """

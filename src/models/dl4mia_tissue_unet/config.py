@@ -75,13 +75,18 @@ class Config:
             "RandomFlip": {},
             "ResizeTransform": {"size": in_size},
         }
+        val_transforms = {}
+        if "NumpyToTensor" in self.TRANSFORMS:
+            val_transforms["NumpyToTensor"] = self.TRANSFORMS["NumpyToTensor"]
+        if "ResizeTransform" in self.TRANSFORMS:
+            val_transforms["ResizeTransform"] = self.TRANSFORMS["ResizeTransform"]
 
         # Create dataset dictionaries for the dataloader
         self.TRAIN_DATASET_DICT = self._create_dataset_dict(
             data_type="train", transforms=self.TRANSFORMS
         )
         self.VAL_DATASET_DICT = self._create_dataset_dict(
-            data_type="val", transforms=self.TRANSFORMS
+            data_type="val", transforms=val_transforms
         )
         self.TEST_DATASET_DICT = self._create_dataset_dict(
             data_type="test", transforms=None
