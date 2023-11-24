@@ -41,56 +41,89 @@ class Predicter:
     def __init__(self, model):
         self.model = model
         self.model.eval()
+        self.n_classes = self.model(torch.rand(1,1,128,128).to(self.device)).shape[1]
 
-    def predict(self, image, gt=None):
+    def predict(self, image, gt = None):
         with torch.no_grad():
             im = preprocess_image(image)
-            multiple_y = im.shape[1] // 8
-            multiple_x = im.shape[2] // 8
-
-            if im.shape[1] % 8 != 0:
-                diff_y = 8 * (multiple_y + 1) - im.shape[1]
-            else:
-                diff_y = 0
-            if im.shape[2] % 8 != 0:
-                diff_x = 8 * (multiple_x + 1) - im.shape[2]
-            else:
-                diff_x = 0
-            p2d = (
-                diff_x // 2,
-                diff_x - diff_x // 2,
-                diff_y // 2,
-                diff_y - diff_y // 2,
-            )  # last dim, second last dim
 
             # Process and predict differently for differeent models
             if isinstance(self.model, v2.UNet):
                 im = np.array(im)
                 im = im[np.newaxis,:]
                 im = torch.from_numpy(im).to(self.device)
-                output = self.model(im)  # B 3 Y X
-                output_softmax = torch.sigmoid(output[0,0,:])
+                output = self.model(im)
+                # Sigmoid if binary
+                if output.shape[1] == 1:
+                    output_softmax = torch.sigmoid(output[0,0,:])
+                    seed_map = output_softmax.cpu().detach().numpy()  # Y X
+                    pred_fg_thresholded = seed_map > 0.5
+                elif output.shape[1] > 1:
+                    output_softmax = torch.argmax(output, dim=1)[0,:,:]
+                    seed_map = output_softmax.cpu().detach().numpy()
+                    pred_fg_thresholded = np.copy(seed_map)
             elif isinstance(self.model, v1.UNet):
-                im = F.pad(torch.from_numpy(im), p2d, "reflect").to(self.device)
-                output = self.model(im)  # B 3 Y X
-                output_softmax = torch.sigmoid(output[0])
+                raise NotImplimentedError("Cannot predict with v1.UNet")
+                # im = F.pad(torch.from_numpy(im), p2d, "reflect").to(self.device)
+                # output = self.model(im)  # B 3 Y X
+                # output_softmax = torch.sigmoid(output[0])
 
-            # Threshold prediction to genrate binary labeled map
-            seed_map = output_softmax.cpu().detach().numpy()  # Y X
-            pred_fg_thresholded = seed_map > 0.5
+            # # Threshold prediction to genrate binary labeled map
+            # seed_map = output_softmax.cpu().detach().numpy()  # Y X
+            # pred_fg_thresholded = seed_map > 0.5
 
-            if (diff_y - diff_y // 2) != 0:
-                pred_fg_thresholded = pred_fg_thresholded[
-                    diff_y // 2 : -(diff_y - diff_y // 2), ...
-                ]
-                seed_map = seed_map[diff_y // 2 : -(diff_y - diff_y // 2), ...]
-            if (diff_x - diff_x // 2) != 0:
-                pred_fg_thresholded = pred_fg_thresholded[
-                    ..., diff_x // 2 : -(diff_x - diff_x // 2)
-                ]
-                seed_map = seed_map[..., diff_x // 2 : -(diff_x - diff_x // 2)]
 
         return pred_fg_thresholded, seed_map
+
+    # def predict(self, image, gt=None):
+    #     with torch.no_grad():
+    #         im = preprocess_image(image)
+    #         multiple_y = im.shape[1] // 8
+    #         multiple_x = im.shape[2] // 8
+
+    #         if im.shape[1] % 8 != 0:
+    #             diff_y = 8 * (multiple_y + 1) - im.shape[1]
+    #         else:
+    #             diff_y = 0
+    #         if im.shape[2] % 8 != 0:
+    #             diff_x = 8 * (multiple_x + 1) - im.shape[2]
+    #         else:
+    #             diff_x = 0
+    #         p2d = (
+    #             diff_x // 2,
+    #             diff_x - diff_x // 2,
+    #             diff_y // 2,
+    #             diff_y - diff_y // 2,
+    #         )  # last dim, second last dim
+
+    #         # Process and predict differently for differeent models
+    #         if isinstance(self.model, v2.UNet):
+    #             im = np.array(im)
+    #             im = im[np.newaxis,:]
+    #             im = torch.from_numpy(im).to(self.device)
+    #             output = self.model(im)  # B 3 Y X
+    #             output_softmax = torch.sigmoid(output[0,0,:])
+    #         elif isinstance(self.model, v1.UNet):
+    #             im = F.pad(torch.from_numpy(im), p2d, "reflect").to(self.device)
+    #             output = self.model(im)  # B 3 Y X
+    #             output_softmax = torch.sigmoid(output[0])
+
+    #         # Threshold prediction to genrate binary labeled map
+    #         seed_map = output_softmax.cpu().detach().numpy()  # Y X
+    #         pred_fg_thresholded = seed_map > 0.5
+
+    #         if (diff_y - diff_y // 2) != 0:
+    #             pred_fg_thresholded = pred_fg_thresholded[
+    #                 diff_y // 2 : -(diff_y - diff_y // 2), ...
+    #             ]
+    #             seed_map = seed_map[diff_y // 2 : -(diff_y - diff_y // 2), ...]
+    #         if (diff_x - diff_x // 2) != 0:
+    #             pred_fg_thresholded = pred_fg_thresholded[
+    #                 ..., diff_x // 2 : -(diff_x - diff_x // 2)
+    #             ]
+    #             seed_map = seed_map[..., diff_x // 2 : -(diff_x - diff_x // 2)]
+
+    #     return pred_fg_thresholded, seed_map
 
 
 class SegmenterWrapper:
@@ -212,7 +245,7 @@ def make_predictions(
     t0 = time.time()
     pred_mask, act_mask = predicter.predict(image, gt=gt_mask)
     print(f"Predict time: {time.time() - t0}")
-    pred_mask = (pred_mask * 255).astype(np.uint8)
+    # pred_mask = (pred_mask * 255).astype(np.uint8)
 
     # prepare a plot for visualization
     prepare_plot(orig, gt_mask, act_mask, pred_mask, title=filename)
@@ -248,7 +281,7 @@ def main(
     mask_paths = list(list_images(f"{data_dir}/{data_type}/masks"))
 
     # Randomly select image/masks to predict
-    n_predict = min(5, len(img_paths))
+    n_predict = min(10, len(img_paths))
     img_paths, mask_paths = zip(
         *random.sample(list(zip(img_paths, mask_paths)), n_predict)
     )

@@ -349,4 +349,4 @@ if __name__ == "__main__":
     oct_data_dir = f"{DATA_DIR}/processed/OCT_scans_128x128"
     oct_data_dir = f"{DATA_DIR}/processed/OCT_scans_new_20230419_skull_512x512"
     results_dir = f"{ROOT_DIR}/src/models/dl4mia_tissue_unet/results"
-    main(oct_data_dir, results_dir, n_classes=1, n_epochs=10, save=False)
+    main(oct_data_dir, results_dir, n_classes=1, n_epochs=10, save=False, batch_size=1)
